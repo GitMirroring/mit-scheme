@@ -322,26 +322,34 @@ darwin*)
     else
 	SDK=MacOSX${MACOSX}
     fi
-    MACOSX_SYSROOT=
+    MACOSX_SDKS=
     for dir in /Developer/SDKs \
     	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs
     do
 	if test -d "${dir}"; then
-	    MACOSX_SYSROOT=${dir}
+	    MACOSX_SDKS=${dir}
 	    break
 	fi
     done
-    if test -z "${MACOSX_SYSROOT}"; then
+    if test -z "${MACOSX_SDKS}"; then
 	AC_MSG_WARN([Can't find SDKs directory, not checking for SDK])
     else	
-	MACOSX_SYSROOT=${MACOSX_SYSROOT}/${SDK}.sdk
-	if test ! -d "${MACOSX_SYSROOT}"; then
+	MACOSX_SYSROOT=
+        for sysroot in ${MACOSX_SDKS}/${SDK}.sdk ${MACOSX_SDKS}/MacOSX.sdk; do
+            if test -d "${sysroot}"; then
+                MACOSX_SYSROOT=${sysroot}
+                MACOSX_CFLAGS="${MACOSX_CFLAGS} -isysroot ${sysroot}"
+                break
+            fi
+        done
+	if test -z "${MACOSX_SYSROOT}"; then
 	    AC_MSG_ERROR([No MacOSX SDK for version: ${MACOSX}])
 	fi
     fi
-    MACOSX_CFLAGS="${MACOSX_CFLAGS} -isysroot ${MACOSX_SYSROOT}"
     MACOSX_CFLAGS="${MACOSX_CFLAGS} -fconstant-cfstrings"
     MACOSX_CFLAGS="${MACOSX_CFLAGS} -DSIGNAL_HANDLERS_CAN_USE_SCHEME_STACK"
+    dnl needed for lgamma_r:
+    MACOSX_CFLAGS="${MACOSX_CFLAGS} -D_REENTRANT"
     AC_MSG_NOTICE([Compiling for MacOSX version ${MACOSX}])
     case ${mit_scheme_native_code} in
     i386)
@@ -354,7 +362,11 @@ darwin*)
 	AS_FLAGS="-arch x86_64 ${AS_FLAGS}"
     	;;
     esac
-    CFLAGS="${CFLAGS} ${MACOSX_CFLAGS} -frounding-math"
+    if ! cc --version | grep -q clang; then
+        dnl -frounding-math not supported by clang.
+        MACOSX_CFLAGS="${MACOSX_CFLAGS} -frounding-math"
+    fi
+    CFLAGS="${CFLAGS} ${MACOSX_CFLAGS}"
     LDFLAGS="${LDFLAGS} ${MACOSX_CFLAGS} -Wl,-syslibroot,${MACOSX_SYSROOT}"
     LDFLAGS="${LDFLAGS} -framework CoreFoundation"
     MODULE_LDFLAGS="${MODULE_LDFLAGS} -bundle"
