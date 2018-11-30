@@ -119,6 +119,7 @@ that was dumped.")
       extra_ephemeron_space
 	= (compute_extra_ephemeron_space (ephemeron_count + n_ephemerons));
     }
+  ALIGN_FLOAT (Free);
   if (GC_NEEDED_P (heap_length + extra_ephemeron_space))
     {
       if (heap_length == failed_heap_length)
