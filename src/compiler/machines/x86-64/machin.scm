@@ -47,7 +47,7 @@ USA.
   (- scheme-object-width scheme-type-width))
 
 (define-integrable float-width 64)
-(define-integrable float-alignment 64)
+(define-integrable float-alignment 128)
 
 (define-integrable address-units-per-float
   (quotient float-width addressing-granularity))

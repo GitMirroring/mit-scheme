@@ -588,6 +588,7 @@ extern void win32_stack_reset (void);
 #  define CURRENT_FASL_ARCH	FASL_X86_64
 #  define PC_ZERO_BITS		0
 #  define HEAP_IN_LOW_MEMORY	1
+#  define FLOATING_ALIGNMENT	0xf
 #endif
 
 #ifdef __ia64__
