@@ -135,45 +135,37 @@ USA.
 
 ;;;; Flonum Arithmetic
 
-(define-rule statement
-  (ASSIGN (REGISTER (? target))
-          (FLONUM-1-ARG (? operator) (REGISTER (? source)) (? overflow?)))
-  overflow?                             ;ignore
-  (let* ((source (flonum-source-reference! source))
-         (target (flonum-target-reference! target)))
-    ((flonum-1-arg/operator operator) target source)))
-
-(define-integrable (flonum-1-arg/operator operation)
-  (lookup-arithmetic-method operation flonum-methods/1-arg))
-
-(define flonum-methods/1-arg
-  (list 'FLONUM-METHODS/1-ARG))
-
-(define ((flonum-unary-operation/target-bits bit-string operate) target source)
-  (LAP (MOVF S D ,target (@PCR ,(allocate-double-float-bits-label bit-string)))
-       ,@(operate target source)))
-
 (define double-flobits:negative-zero
   (let ((bit-string (make-bit-string 64 #f)))
     (bit-string-set! bit-string 63)
     bit-string))
 
-(define-arithmetic-method 'FLONUM-ABS flonum-methods/1-arg
-  (flonum-unary-operation/target-bits
-   (bit-string-not double-flobits:negative-zero)
-   (lambda (target source)
-     ;; No scalar version, but doing this packed is harmless.
-     (LAP (ANDF P D ,target ,source)))))
+(define-rule statement
+  (ASSIGN (REGISTER (? target))
+          (FLONUM-1-ARG FLONUM-ABS (REGISTER (? source)) (? overflow?)))
+  overflow?                             ;ignore
+  ;; No scalar ANDF, so use packed one.
+  (let* ((bits (bit-string-not double-flobits:negative-zero))
+         (label (allocate-packed-double-float-bits-label bits))
+         (target (float-move-to-target! source target)))
+    (LAP (ANDF P D ,target (@PCR ,label)))))
 
-(define-arithmetic-method 'FLONUM-NEGATE flonum-methods/1-arg
-  (flonum-unary-operation/target-bits
-   double-flobits:negative-zero
-   (lambda (target source)
-     ;; No scalar version, but doing this packed is harmless.
-     (LAP (XORF P D ,target ,source)))))
+(define-rule statement
+  (ASSIGN (REGISTER (? target))
+          (FLONUM-1-ARG FLONUM-NEGATE (REGISTER (? source)) (? overflow?)))
+  overflow?                             ;ignore
+  ;; No scalar XORF, so use packed one.
+  (let* ((bits double-flobits:negative-zero)
+         (label (allocate-packed-double-float-bits-label bits))
+         (target (float-move-to-target! source target)))
+    (LAP (XORF P D ,target (@PCR ,label)))))
 
-(define-arithmetic-method 'FLONUM-SQRT flonum-methods/1-arg
-  (lambda (target source)
+(define-rule statement
+  (ASSIGN (REGISTER (? target))
+          (FLONUM-1-ARG FLONUM-SQRT (REGISTER (? source)) (? overflow?)))
+  overflow?                             ;ignore
+  (let* ((source (flonum-source-reference! source))
+         (target (flonum-target-reference! target)))
     (LAP (SQRTF S D ,target ,source))))
 
 (define-rule statement
