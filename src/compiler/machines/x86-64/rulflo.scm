@@ -280,6 +280,45 @@ USA.
   (binary-operation FLONUM-MULTIPLY MULF #t)
   (binary-operation FLONUM-SUBTRACT SUBF #f))
 
+(define-arithmetic-method 'FLONUM-COPYSIGN flonum-methods/2-args
+  (flonum-2-args/standard #f
+    (lambda (target source)
+      (let* ((bits (bit-string-not double-flobits:negative-zero))
+             (label (allocate-double-float-bits-label bits))
+             (temp (reference-temporary-register! 'FLOAT)))
+        (LAP
+         ;; Set temp := 0x7fff....
+         (MOVF S D ,temp (@PCR ,label))
+         ;; target holds arg1.  Set target := arg1 & 0x7fff....
+         (ANDF P D ,target ,temp)
+         ;; source holds arg2.  Set temp := arg2 & 0x1000....
+         (ANDNF P D ,temp ,source)
+         ;; Set target := (arg1 & 0x7fff...) & (arg2 & 0x1000...).
+         (ORF P D ,target ,temp))))))
+
+(define-arithmetic-method 'FLONUM-COPYSIGN flonum-methods/register*constant
+  (lambda (target source constant)
+    (let ((target (float-move-to-target! source target)))
+      (if (flo:safe-negative? constant)
+          (let* ((bits double-flobits:negative-zero)
+                 (label (allocate-packed-double-float-bits-label bits)))
+            (LAP (ORF P D ,target (@PCR ,label))))
+          (let* ((bits (bit-string-not double-flobits:negative-zero))
+                 (label (allocate-packed-double-float-bits-label bits)))
+            (LAP (ANDF P D ,target (@PCR ,label))))))))
+
+(define-arithmetic-method 'FLONUM-COPYSIGN flonum-methods/constant*register
+  (lambda (target constant source)
+    (with-packed-float-operand (flo:abs constant)
+      (lambda (operand)
+        (let ((target (float-move-to-target! source target)))
+          (let* ((bits double-flobits:negative-zero)
+                 (label (allocate-packed-double-float-bits-label bits)))
+            ;; target holds arg2.  Set target := (target & 0x1000...) |
+            ;; (constant & 0x7fff...).
+            (LAP (ANDF P D ,target (@PCR ,label))
+                 (ORF P D ,target ,operand))))))))
+
 ;;;; Flonum Predicates
 
 (define double-flobits:zero
@@ -466,6 +505,26 @@ USA.
            (lambda (operand)
              (LAP (MOVF S D ,(flonum-target-reference! target) ,operand)))))))
 
+(define (with-packed-float-operand fp-value receiver)
+  (if (not (flo:flonum? fp-value))
+      (error "Invalid constant flonum operand:" fp-value))
+  (if compiler:cross-compiling?
+      (let ((tempi (allocate-temporary-register! 'GENERAL))
+            (tempf (allocate-temporary-register! 'FLOAT)))
+        ;; Two temporaries: one general register to load the pointer,
+        ;; to be loaded with scalar double move; receiver can't handle
+        ;; unaligned addresses, and while we guarantee compiled code
+        ;; blocks and flonum vectors are 128-bit aligned, we do not
+        ;; guarantee that individual flonums are 128-bit aligned.
+        (LAP ,@(load-constant (register-reference tempi) fp-value)
+             ,@(object->address (register-reference tempi))
+             (MOVF S D
+                   ,(register-reference tempf)
+                   (@RO ,tempi ,flonum-data-offset))
+             ,@(receiver (register-reference tempf))))
+      (receiver
+       (INST-EA (@PCR ,(allocate-packed-double-float-label fp-value))))))
+
 (define (with-float-operand fp-value receiver)
   (if (not (flo:flonum? fp-value))
       (error "Invalid constant flonum operand:" fp-value))
@@ -476,6 +535,14 @@ USA.
              ,@(receiver (INST-EA (@RO ,temp ,flonum-data-offset)))))
       (receiver (INST-EA (@PCR ,(allocate-double-float-label fp-value))))))
 
+;;; XXX Would be nice if we could use the padding between packed double
+;;; floats for scalar double floats.
+
+(define (allocate-packed-double-float-bits-label bit-string)
+  (allocate-data-label bit-string 'PACKED-DOUBLE-FLOATS 0 16
+    (LAP (QUAD U ,(bit-string->unsigned-integer bit-string))
+         (QUAD U 0))))
+
 (define (allocate-double-float-bits-label bit-string)
   (allocate-data-label bit-string 'DOUBLE-FLOATS 0 8
     (LAP (QUAD U ,(bit-string->unsigned-integer bit-string)))))
@@ -485,10 +552,19 @@ USA.
     (LAP (LONG U ,(bit-string->unsigned-integer bit-string)))))
 
 (define (allocate-double-float-label flonum)
-  (allocate-double-float-bits-label
-   (let ((bit-string (make-bit-string 64 #f)))
-     ;; Skip the manifest preceding the flonum data.  Is there a
-     ;; better way to express this?
-     (let ((flonum-data-offset-in-bits (* 8 (bytes-per-object))))
-       (read-bits! flonum flonum-data-offset-in-bits bit-string))
-     bit-string)))
+  (allocate-double-float-bits-label (flonum->double-float-bit-string flonum)))
+
+(define (allocate-packed-double-float-label flonum)
+  (allocate-packed-double-float-bits-label
+   (flonum->double-float-bit-string flonum)))
+
+(define (flonum->double-float-bit-string flonum)
+  (let ((bit-string (make-bit-string 64 #f)))
+    ;; Skip the manifest preceding the flonum data.  Is there a
+    ;; better way to express this?
+    (let ((flonum-data-offset-in-bits (* 8 (bytes-per-object))))
+      (read-bits! flonum flonum-data-offset-in-bits bit-string))
+    bit-string))
+
+(define (float-move-to-target! source target)
+  (register-reference (move-to-alias-register! source 'FLOAT target)))
