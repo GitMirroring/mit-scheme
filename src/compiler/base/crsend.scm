@@ -152,7 +152,9 @@ USA.
 		  (cross-link/finish-assembly
 		   (cc-code-block/bit-string code-vector)
 		   (cc-code-block/objects code-vector)
-		   (cc-code-block/object-width code-vector))))
+		   (cc-code-block/object-width code-vector)
+		   (cc-code-block/float-width code-vector)
+		   (cc-code-block/float-alignment code-vector))))
 	     (set-compiled-code-block/debugging-info!
 	      new-code-vector
 	      (cc-code-block/debugging-info code-vector))
@@ -187,34 +189,66 @@ USA.
 		  (cc-vector/ic-procedure-headers cc-vector))
 	expression))))
 
-(define (cross-link/finish-assembly code-block objects scheme-object-width)
-  (let* ((bl (quotient (bit-string-length code-block) scheme-object-width))
-	 (non-pointer-length ((ucode-primitive make-non-pointer-object) bl))
-	 (output-block (make-vector (+ (length objects) bl 1))))
+(define (cross-link/finish-assembly code-block objects
+				    scheme-object-width
+				    float-width
+				    float-alignment)
+  ;; See layout diagram in assemble-objects in back/bittop.scm.
+  (let* ((manifest-length 1)		;vector header
+	 (manifest-nm-length 1)		;nmv header, at aligned address
+	 (padding-length		;padding to align next address
+	  (- (quotient float-alignment scheme-object-width)
+	     manifest-nm-length))
+	 (code-length		;XXX Should this round up?
+	  (quotient (bit-string-length code-block) scheme-object-width))
+	 (non-pointer-length (+ padding-length code-length))
+	 ;; Offsets are for system-vector-ref, and start at the
+	 ;; address after the manifest header.
+	 (manifest-nm-offset 0)
+	 (padding-offset (+ manifest-nm-offset manifest-nm-length))
+	 (code-offset (+ padding-offset padding-length))
+	 (objects-offset (+ code-offset code-length))
+	 (total-length (+ objects-offset (length objects)))
+	 (flo-length
+	  (let ((flo-size (quotient float-width scheme-object-width)))
+	    (quotient (+ total-length (- flo-size 1)) flo-size)))
+	 (output-block
+	  (object-new-type (ucode-type compiled-code-block)
+			   (flo:vector-cons flo-length))))
     (with-absolutely-no-interrupts
       (lambda ()
-	(vector-set! output-block 0
-		     ((ucode-primitive primitive-object-set-type)
-		      (ucode-type manifest-nm-vector)
-		      non-pointer-length))))
-    ;; After header just inserted.
-    (write-bits! output-block (* scheme-object-width 2) code-block)
-    (insert-objects! output-block objects (+ bl 1))
+	(let ((ob (object-new-type (ucode-type vector) output-block)))
+	  (subvector-fill! ob objects-offset (system-vector-length ob) #f)
+	  (vector-set! ob 0
+		       ((ucode-primitive primitive-object-set-type)
+			(ucode-type manifest-nm-vector)
+			non-pointer-length)))))
+    ;; write-bits! is relative to address of manifest.
+    (write-bits! output-block
+		 (* scheme-object-width (+ manifest-length code-offset))
+		 code-block)
+    ((ucode-primitive primitive-object-set! 3)
+     output-block 0
+     (object-new-type (ucode-type manifest-vector) total-length))
+    (insert-objects! output-block objects objects-offset)
     (object-new-type (ucode-type compiled-code-block) output-block)))
 
 (define (insert-objects! v objects where)
-  (let ((end (vector-length v)))
-    (do ((objects objects (cdr objects))
-	 (index where (fix:+ index 1)))
-	((not (fix:< index end)) unspecific)
-      (vector-set! v index (cadar objects)))))
+  (cond ((not (null? objects))
+	 (system-vector-set! v where (cadar objects))
+	 (insert-objects! v (cdr objects) (fix:+ where 1)))
+	((not (fix:= where (system-vector-length v)))
+	 (error "insert-objects!: object phase error" where))
+	(else unspecific)))
 
 (define-structure (cc-code-block (type vector)
 				 (conc-name cc-code-block/))
   (debugging-info #f read-only #f)
   (bit-string #f read-only #t)
   (objects #f read-only #t)
-  (object-width #f read-only #t))
+  (object-width #f read-only #t)
+  (float-width #f read-only #t)
+  (float-alignment #f read-only #t))
 
 (define-structure (cc-vector (type vector)
 			     (constructor cc-vector/make)

@@ -97,9 +97,10 @@ USA.
 		   (continue (not widening?) count)))))))
   (loop false vars 0))
 
-;;; Vector header and NMV header for code section
+;;; Vector header, NMV header, and alignment padding for code section
 
-(define compiler-output-block-number-of-header-words 2)
+(define compiler-output-block-number-of-header-words
+  (+ 2 (- (quotient float-alignment scheme-object-width) 1)))
 
 (define starting-pc
   (* compiler-output-block-number-of-header-words scheme-object-width))
@@ -124,19 +125,42 @@ USA.
     code-block))
 
 (define (assemble-objects code-block)
+  ;; Layout:
+  ;;
+  ;;	manifest nm header
+  ;;	manifest nmv header	[aligned address, offset 0]
+  ;;	padding
+  ;;	padding
+  ;;	...
+  ;;	code			[aligned address, offset code-offset]
+  ;;	code
+  ;;	...
+  ;;	object			[offset objects-offset]
+  ;;	object
+  ;;	...
+  ;;
   (let ((objects (map assemble-an-object (queue->list *objects*))))
     (if compiler:cross-compiling?
-	(vector 'DEBUGGING-INFO-SLOT code-block objects scheme-object-width)
-	(let* ((bl (quotient (bit-string-length code-block)
-			     scheme-object-width))
-	       (non-pointer-length
-		((ucode-primitive make-non-pointer-object) bl))
-	       (objects-length (length objects))
-	       (total-length (fix:+ 1 (fix:+ objects-length bl)))
+	(vector 'DEBUGGING-INFO-SLOT code-block objects
+		scheme-object-width float-width float-alignment)
+	(let* ((manifest-length 1)	;vector header
+	       (manifest-nm-length 1)	;nmv header, at aligned address
+	       (padding-length		;padding to align next address
+		(- (quotient float-alignment scheme-object-width)
+		   manifest-nm-length))
+	       (code-length		;XXX Should this round up?
+		(quotient (bit-string-length code-block) scheme-object-width))
+	       (non-pointer-length (+ padding-length code-length))
+	       ;; Offsets are for system-vector-ref, and start at the
+	       ;; address after the manifest header.
+	       (manifest-nm-offset 0)
+	       (padding-offset (+ manifest-nm-offset manifest-nm-length))
+	       (code-offset (+ padding-offset padding-length))
+	       (objects-offset (+ code-offset code-length))
+	       (total-length (+ objects-offset (length objects)))
 	       (flo-length
-		(let ((flo-size (fix:quotient float-width scheme-datum-width)))
-		  (fix:quotient (fix:+ total-length (fix:- flo-size 1))
-				flo-size)))
+		(let ((flo-size (quotient float-width scheme-object-width)))
+		  (quotient (+ total-length (- flo-size 1)) flo-size)))
 	       (output-block
 		(object-new-type (ucode-type compiled-code-block)
 				 (flo:vector-cons flo-length))))
@@ -144,21 +168,21 @@ USA.
 	    (lambda ()
 	      (let ((ob (object-new-type (ucode-type vector) output-block)))
 		(subvector-fill! ob
-				 (fix:+ bl 1)
+				 objects-offset
 				 (system-vector-length ob)
 				 #f)
 		(vector-set! ob 0
 			     ((ucode-primitive primitive-object-set-type)
 			      (ucode-type manifest-nm-vector)
 			      non-pointer-length)))))
+	  ;; write-bits! is relative to address of manifest.
 	  (write-bits! output-block
-		       ;; After header just inserted.
-		       (* scheme-object-width 2)
+		       (* scheme-object-width (+ manifest-length code-offset))
 		       code-block)
 	  ((ucode-primitive primitive-object-set! 3)
 	   output-block 0
 	   (object-new-type (ucode-type manifest-vector) total-length))
-	  (insert-objects! output-block objects (fix:+ bl 1))
+	  (insert-objects! output-block objects objects-offset)
 	  output-block))))
 
 (define (assemble-an-object object)
