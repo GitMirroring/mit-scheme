@@ -430,7 +430,9 @@ USA.
 	  clear-call-graph!
 	  compute-call-graph!
 	  outer-analysis
-	  side-effect-analysis))
+	  side-effect-analysis
+	  variable/side-effect-free?
+	  constant/side-effect-free?))
 
 (define-package (compiler fg-optimizer fold-constants)
   (files "fgopt/folcon")
@@ -441,6 +443,11 @@ USA.
   (files "fgopt/operan")
   (parent (compiler fg-optimizer))
   (export (compiler top-level) operator-analysis))
+
+(define-package (compiler fg-optimizer live-variable-analysis)
+  (files "fgopt/live")
+  (parent (compiler fg-optimizer))
+  (export (compiler top-level) live-variable-analysis))
 
 (define-package (compiler fg-optimizer variable-indirection)
   (files "fgopt/varind")

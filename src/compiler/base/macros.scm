@@ -174,7 +174,7 @@ USA.
 (define-type-definition snode 7 #f)
 (define-type-definition pnode 8 #f)
 (define-type-definition rvalue 2 rvalue-types)
-(define-type-definition lvalue 14 #f)
+(define-type-definition lvalue 15 #f)
 
 (define-syntax descriptor-list
   (sc-macro-transformer
@@ -252,7 +252,7 @@ USA.
 	   `(LET ((LVALUE
 		   ((ACCESS VECTOR ,system-global-environment)
 		    ,tag #F '() '() '() '() '() '() 'NOT-CACHED
-		    #F '() #F #F '() ,@extra)))
+		    #F '() #F #F '() #F ,@extra)))
 	      (SET! *LVALUES* (CONS LVALUE *LVALUES*))
 	      LVALUE))
 	 (ill-formed-syntax form)))))

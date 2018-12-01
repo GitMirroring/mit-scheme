@@ -44,6 +44,7 @@ USA.
 (define compiler:implicit-self-static? #t)
 (define compiler:optimize-environments? #t)
 (define compiler:analyze-side-effects? #t)
+(define compiler:analyze-live-variables? #t)
 (define compiler:cse? #t)
 (define compiler:open-code-primitives? #t)
 (define compiler:generate-rtl-files? #f)

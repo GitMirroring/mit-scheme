@@ -114,7 +114,8 @@ USA.
 
 ) ;; package
 
-(package (side-effect-analysis)
+(package (side-effect-analysis
+	  variable/side-effect-free? constant/side-effect-free?)
 
 ;; IMPORTANT: This assumes that the call graph has been computed.
 
@@ -163,7 +164,7 @@ USA.
 	     '()
 	     (list `(ARBITRARY ,@arbitrary-callees)))))))
 
-(define (variable/side-effect-free? variable)
+(define-export (variable/side-effect-free? variable)
   (let ((decls (variable-declarations variable)))
     (or (memq 'SIDE-EFFECT-FREE decls)
 	(memq 'PURE-FUNCTION decls)
@@ -171,7 +172,7 @@ USA.
 	     (side-effect-free-variable?
 	      (variable-name variable))))))
 
-(define (constant/side-effect-free? constant)
+(define-export (constant/side-effect-free? constant)
   (and (rvalue/constant? constant)			; Paranoia
        (let ((val (constant-value constant)))
 	 (and (not (eq? val compiled-error-procedure))	; Hmm.

@@ -350,7 +350,8 @@ USA.
 			      "declar" "fggen" "canon")
 	     (filename/append "fgopt"
 			      "blktyp" "closan" "conect" "contan" "delint"
-			      "desenv" "envopt" "folcon" "offset" "operan"
+			      "desenv" "envopt" "folcon" "live" "offset"
+			      "operan"
 			      "order" "outer" "param" "reord" "reteqv" "reuse"
 			      "sideff" "simapp" "simple" "subfre" "varind")
 	     (filename/append "rtlbase"
@@ -502,7 +503,8 @@ USA.
 		       "declar" "fggen") ; "canon" needs no integrations
       (filename/append "fgopt"
 		       "blktyp" "closan" "conect" "contan" "delint" "desenv"
-		       "envopt" "folcon" "offset" "operan" "order" "param"
+		       "envopt" "folcon" "live" "offset" "operan" "order"
+		       "param"
 		       "outer" "reuse" "reteqv" "sideff" "simapp" "simple"
 		       "subfre" "varind"))
      (append x86-64-base front-end-base))

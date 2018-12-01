@@ -47,6 +47,8 @@ USA.
   passed-in?		;true iff this lvalue gets an unknown value
   passed-out?		;true iff this lvalue passes its value to unknown place
   source-links		;backward links with circularities removed
+  dependencies		;list of lvalues on which this depends, or #F
+			;  if tihs lvalue is known or assumed to be useful
   )
 
 ;;; Note that the rvalues stored in `initial-values', `values-cache',
@@ -59,7 +61,7 @@ USA.
 ;;;   (let ((lvalue
 ;;; 	 (list->vector
 ;;; 	  (cons* tag #f '() '() '() '() '() '() 'NOT-CACHED
-;;; 		 #f '() #f #f '() extra))))
+;;; 		 #f '() #f #f '() #f extra))))
 ;;;     (set! *lvalues* (cons lvalue *lvalues*))
 ;;;     lvalue))
 

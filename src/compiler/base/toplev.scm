@@ -788,6 +788,7 @@ USA.
       (phase/variable-indirection)
       (phase/compute-call-graph)
       (phase/side-effect-analysis)
+      (phase/live-variable-analysis)
       (phase/continuation-analysis)
       (phase/subproblem-analysis)
       (phase/delete-integrated-parameters)
@@ -824,6 +825,11 @@ USA.
   (compiler-subphase "Operator Analysis"
     (lambda ()
       (operator-analysis *procedures* *applications*))))
+
+(define (phase/live-variable-analysis)
+  (compiler-subphase "Live Variable Analysis"
+    (lambda ()
+      (live-variable-analysis *root-expression* *lvalues*))))
 
 (define (phase/variable-indirection)
   (compiler-subphase "Variable Indirection"
