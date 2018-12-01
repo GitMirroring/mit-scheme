@@ -105,22 +105,31 @@ USA.
 (define-integrable (lvalue/variable? lvalue)
   (eq? (tagged-vector/tag lvalue) variable-tag))
 
+;;; XXX Whattakludge!  Just create another field (or compact the
+;;; boolean fields into a bit mask).
+
 (define-syntax define-named-variable
   (sc-macro-transformer
    (lambda (form environment)
      environment
      (let* ((name (cadr form))
 	    (variable-name
-	     (intern (string-append "#[" (symbol->string name) "]"))))
-       `(BEGIN (DEFINE-INTEGRABLE
+	     (intern (string-append "#[" (symbol->string name) "]")))
+	    (counter (symbol '* name '- 'COUNTER '*)))
+       `(BEGIN (DEFINE ,counter 0)
+	       (DEFINE-INTEGRABLE
 		 (,(symbol 'MAKE- name '-VARIABLE) BLOCK)
-		 (MAKE-VARIABLE BLOCK ',variable-name))
+		 (MAKE-VARIABLE BLOCK
+				(SYMBOL ',variable-name
+					'-
+					(SET! ,counter (+ 1 ,counter)))))
 	       (DEFINE-INTEGRABLE
 		 (,(symbol 'VARIABLE/ name '-VARIABLE?) LVALUE)
-		 (EQ? (VARIABLE-NAME LVALUE) ',variable-name))
+		 (STRING-PREFIX? (SYMBOL->STRING (VARIABLE-NAME LVALUE))
+				 ,(symbol->string variable-name)))
 	       (DEFINE (,(symbol name '-VARIABLE?) LVALUE)
 		 (AND (VARIABLE? LVALUE)
-		      (EQ? (VARIABLE-NAME LVALUE) ',variable-name))))))))
+		      (,(symbol 'VARIABLE/ name '-VARIABLE?) LVALUE))))))))
 
 (define-named-variable continuation)
 (define-named-variable value)
