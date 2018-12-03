@@ -980,12 +980,23 @@ USA.
 (define (phase/rtl-optimization)
   (compiler-superphase "RTL Optimization"
     (lambda ()
-      (phase/rtl-dataflow-analysis)
-      (phase/rtl-rewriting rtl-rewriting:pre-cse)
-      (if compiler:cse?
-	  (phase/common-subexpression-elimination))
-      (phase/invertible-expression-elimination)
-      (phase/rtl-rewriting rtl-rewriting:post-cse)
+      (let loop ((n 1))
+	(phase/rtl-dataflow-analysis)
+	(phase/rtl-rewriting rtl-rewriting:pre-cse)
+	(if compiler:cse?
+	    (phase/common-subexpression-elimination))
+	(phase/invertible-expression-elimination)
+	(phase/rtl-rewriting rtl-rewriting:post-cse)
+	(phase/rtl-dataflow-analysis)
+	(if (phase/dead-code-elimination)
+	    (if (< n 100)
+		(loop (+ n 1))
+		(write-notification-line
+		 (lambda (port)
+		   (write-string "Stopping at 100 iterations of pruning"
+				 port)
+		   (pp `(gave up after ,n iterations)))))
+	    (pp `(converged after ,n iterations))))
       (phase/common-suffix-merging)
       (phase/lifetime-analysis)
       (if compiler:code-compression?

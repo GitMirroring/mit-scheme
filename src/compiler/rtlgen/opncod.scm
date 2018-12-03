@@ -86,9 +86,8 @@ USA.
 			      indices
 			      (if (boolean? internal-close-coding?)
 				  internal-close-coding?
-				  (internal-close-coding?
-				   primitive
-				   (combination/block combination)))))))))
+				  (internal-close-coding? primitive
+							  combination))))))))
 
 ;;;; Code Generator
 
@@ -280,20 +279,40 @@ USA.
      (and (exact-nonnegative-integer? operand)
 	  (back-end:< operand scheme-type-limit)))))
 
-(define (internal-close-coding-for-type-checks primitive block)
-  (block/generate-type-checks? block primitive))
+;;; The close-coding -- which, for the present purposes, really means
+;;; pushing arguments on the stack -- is important only in a reduction,
+;;; where we have to overwrite our existing frame and the continuation
+;;; parser in the debugger gets confused if we push arguments only in
+;;; an error branch that we didn't arrange the debug data to know
+;;; about.  In other cases, it is preferable to push the arguments on
+;;; the stack only after we have concluded that they are bad --
+;;; otherwise, early stack pushes may, e.g., force boxing flonums.
 
-(define (internal-close-coding-for-range-checks primitive block)
-  (block/generate-range-checks? block primitive))
+(define (internal-close-coding-for-type-checks primitive combination)
+  (and (combination/reduction? combination)
+       (let ((block (combination/block combination)))
+	 (block/generate-type-checks? block primitive))))
 
-(define (internal-close-coding-for-type-or-range-checks primitive block)
-  (or (block/generate-type-checks? block primitive)
-      (block/generate-range-checks? block primitive)))
+(define (internal-close-coding-for-range-checks primitive combination)
+  (and (combination/reduction? combination)
+       (let ((block (combination/block combination)))
+	 (block/generate-range-checks? block primitive))))
+
+(define (internal-close-coding-for-type-or-range-checks primitive combination)
+  (and (combination/reduction? combination)
+       (let ((block (combination/block combination)))
+	 (or (block/generate-type-checks? block primitive)
+	     (block/generate-range-checks? block primitive)))))
 
 ;;;; Constraint Checkers
 
 (define (open-code:with-checks combination checks non-error-cfg error-finish
 			       primitive-name expressions)
+  ;; XXX If we want to support restarting primitives with substitute
+  ;; values, then we need to use error-finish.  But that's an obscure
+  ;; use case, and if we make the error nonrestartable then it is
+  ;; easier to safely eliminate redundant type checks.
+  error-finish				;unused
   (let ((checks
 	 (remove (lambda (cfg)
 		   (or (cfg-null? cfg)
@@ -316,40 +335,24 @@ USA.
 			 (generate-continuation-entry
 			  (combination/context combination)))
 		     (lambda (label setup cleanup)
-		       (scfg-append!
-			(generate-primitive primitive-name
-					    (length expressions)
-					    expressions setup label)
-			cleanup
-			(if error-finish
-			    (error-finish (rtl:make-fetch register:value))
-			    (make-null-cfg)))
-		       #|
-		       ;; This code is preferable to the above
-		       ;; expression in some circumstances.  It
-		       ;; creates a continuation, but the continuation
-		       ;; is left dangling instead of being hooked
-		       ;; back into the subsequent code.  This avoids
-		       ;; a merge in the RTL and allows the CSE to do
-		       ;; a better job -- but the cost is that it
-		       ;; creates a continuation that, if invoked, has
-		       ;; unpredictable behavior.
 		       (let ((scfg
-			      (scfg*scfg->scfg!
+			      (scfg-append!
 			       (generate-primitive primitive-name
 						   (length expressions)
 						   expressions setup label)
-			       cleanup)))
-			 (make-scfg (cfg-entry-node scfg) '()))
-		       |#
-		       )))))
+			       cleanup
+			       ;; XXX Cache a single copy of this error
+			       ;; branch for all primitive errors,
+			       ;; since it doesn't vary.
+			       (generate-error label))))
+			 (make-scfg (cfg-entry-node scfg) '())))))))
 	  (let loop ((checks checks))
 	    (if (null? checks)
 		non-error-cfg
 		(pcfg*scfg->scfg! (car checks)
 				  (loop (cdr checks))
 				  error-cfg)))))))
-
+
 (define (generate-primitive name nargs argument-expressions
 			    continuation-setup continuation-label)
   (scfg*scfg->scfg!
@@ -369,6 +372,18 @@ USA.
       (1+ nargs)
       continuation-label
       primitive))))
+
+(define (generate-error label)
+  (scfg*scfg->scfg!
+   (let loop ((args '("Unrecoverable type error" () #f)))
+     (if (null? args)
+	 (rtl:make-push-return label)
+	 (load-temporary-register scfg*scfg->scfg!
+				  (rtl:make-constant (car args))
+	   (lambda (temporary)
+	     (scfg*scfg->scfg! (loop (cdr args))
+			       (rtl:make-push temporary))))))
+   (rtl:make-invocation:primitive 2 #f compiled-error-procedure)))
 
 (define (open-code:type-check expression type primitive block)
   (if (and type
@@ -980,7 +995,12 @@ USA.
 	    internal-close-coding-for-type-checks)))))
   (user-ref 'VECTOR-LENGTH rtl:datum-fetch (ucode-type vector) 0)
   (user-ref '%RECORD-LENGTH rtl:datum-fetch (ucode-type record) 0)
-  (user-ref 'STRING-LENGTH rtl:datum-fetch (ucode-type string) 1)
+  ;; XXX The hybrid support for Unicode strings and whatever ucode-type
+  ;; string means means the open-coding must defer to the primitive
+  ;; even in non-error cases.  We can do that here -- like the generic
+  ;; arithmetic operators -- but OPEN-CODE:WITH-CHECKS is not set up to
+  ;; do it at the moment.
+  ;; (user-ref 'STRING-LENGTH rtl:datum-fetch (ucode-type string) 1)
   (user-ref 'BIT-STRING-LENGTH rtl:datum-fetch (ucode-type vector-1b) 1)
   (user-ref 'BYTEVECTOR-LENGTH rtl:datum-fetch (ucode-type bytevector) 1)
   (user-ref 'FLOATING-VECTOR-LENGTH
@@ -1234,6 +1254,13 @@ USA.
    '(0 1 2)
    internal-close-coding-for-type-or-range-checks))
 
+;; XXX The hybrid support for Unicode strings and whatever ucode-type
+;; string means means the open-coding must defer to the primitive even
+;; in non-error cases.  We can do that here -- like the generic
+;; arithmetic operators -- but OPEN-CODE:WITH-CHECKS is not set up to
+;; do it at the moment.
+
+#;
 (define-open-coder/value 'STRING-REF
   (simple-open-coder
    (bytevector-memory-reference 'STRING-REF (ucode-type string) false
@@ -1242,7 +1269,7 @@ USA.
        (finish (rtl:char-fetch locative))))
    '(0 1)
    internal-close-coding-for-type-or-range-checks))
-
+#;
 (define-open-coder/effect 'STRING-SET!
   (simple-open-coder
    (bytevector-memory-reference 'STRING-SET!
