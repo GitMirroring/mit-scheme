@@ -1014,6 +1014,20 @@ USA.
     (lambda ()
       (invertible-expression-elimination *rtl-graphs*))))
 
+(define (phase/dead-code-elimination)
+  (compiler-subphase "Dead Code Elimination"
+    (lambda ()
+      (and (dead-branch-elimination *rtl-graphs*)
+	   (begin
+	     (receive (procedures continuations)
+		      (dead-block-elimination *rtl-graphs*
+					      *rtl-root*
+					      *rtl-procedures*
+					      *rtl-continuations*)
+	       (set! *rtl-procedures* procedures)
+	       (set! *rtl-continuations* continuations)
+	       #t))))))
+
 (define (phase/common-suffix-merging)
   (compiler-subphase "Common Suffix Merging"
     (lambda ()

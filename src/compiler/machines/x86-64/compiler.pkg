@@ -252,6 +252,8 @@ USA.
 	  *rtl-expression*
 	  *rtl-graphs*
 	  *rtl-procedures*)
+  (export (compiler rtl-optimizer)
+	  label->object)
   (export (compiler lap-syntaxer)
 	  *block-label*
 	  *external-labels*
@@ -623,6 +625,13 @@ USA.
   (files "rtlopt/rinvex")
   (parent (compiler rtl-optimizer))
   (export (compiler top-level) invertible-expression-elimination))
+
+(define-package (compiler rtl-optimizer dead-code-elimination)
+  (files "rtlopt/rtldce")
+  (parent (compiler rtl-optimizer))
+  (export (compiler top-level)
+	  dead-branch-elimination
+	  dead-block-elimination))
 
 (define-package (compiler rtl-optimizer common-suffix-merging)
   (files "rtlopt/rtlcsm")

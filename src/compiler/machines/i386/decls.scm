@@ -363,7 +363,7 @@ USA.
 	     (filename/append "rtlopt"
 			      "ralloc" "rcompr" "rcse1" "rcse2" "rcseep"
 			      "rcseht" "rcserq" "rcsesr" "rdebug" "rdflow"
-			      "rerite" "rinvex" "rlife" "rtlcsm"))
+			      "rerite" "rinvex" "rlife" "rtlcsm" "rtldce"))
      (->environment '(COMPILER)))
     (file-dependency/syntax/join
      (filename/append "machines/i386"
@@ -518,7 +518,7 @@ USA.
     (file-dependency/integration/join
      (append cse-all
 	     (filename/append "rtlopt" "ralloc" "rcompr" "rdebug" "rdflow"
-			      "rerite" "rinvex" "rlife" "rtlcsm")
+			      "rerite" "rinvex" "rlife" "rtlcsm" "rtldce")
 	     (filename/append "machines/i386" "rulrew"))
      (append i386-base rtl-base))
 

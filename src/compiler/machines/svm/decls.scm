@@ -468,7 +468,7 @@ USA.
     (file-dependency/integration/join
      (append cse-all
 	     (filename/append "rtlopt" "ralloc" "rcompr" "rdebug" "rdflow"
-			      "rerite" "rinvex" "rlife" "rtlcsm")
+			      "rerite" "rinvex" "rlife" "rtlcsm" "rtldce")
 	     (filename/append "machines/svm" "rules"))
      (append machine-base rtl-base))
 
