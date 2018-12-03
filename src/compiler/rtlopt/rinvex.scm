@@ -150,6 +150,10 @@ USA.
 	  (else
 	   (loop (cdr identities))))))
 
+(define (rtl:float->object-type expression)
+  expression
+  (rtl:make-machine-constant (ucode-type flonum)))
+
 (define identities
   ;; Each entry is composed of a value class and a sequence of
   ;; operations whose composition is the identity for that value
@@ -182,7 +186,9 @@ USA.
     (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
 			     (CONS-POINTER ,rtl:cons-pointer-type))
     (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
-			     (CONS-NON-POINTER ,rtl:cons-non-pointer-type))))
+			     (CONS-NON-POINTER ,rtl:cons-non-pointer-type))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (FLOAT->OBJECT ,rtl:float->object-type))))
 
 (define (valid-subexpression? expression)
   ;; Machine registers not allowed because they are volatile.
