@@ -226,3 +226,218 @@ USA.
   (let ((prefix (subproblem-prefix subproblem)))
     (if (not (cfg-null? prefix))
 	(fg/print-node (cfg-entry-node prefix)))))
+
+;;;; FG in Scheme-like notation
+
+(define (fg->sexp obj)
+  (with-new-node-marks
+    (lambda ()
+      (cond ((rvalue? obj) (rvalue->sexp obj))
+	    ((or (snode? obj) (pnode? obj)) (node->sexp obj))
+	    (else (error "Unknown FG object type:" obj))))))
+
+(define (node->sexp node)
+  `(BEGIN ,@(node->sexp* node)))
+
+(define (node->sexp* node)
+  (if (node-marked? node)
+      `('(,(hash-object node)))
+      (begin
+	(node-mark! node)
+	`(',(hash-object node)
+	  ,@(%node->sexp node)))))
+
+(define (snode-next->sexp* node)
+  (let ((next (snode-next node)))
+    (if next
+	(node->sexp* next)
+	'())))
+
+(define (%node->sexp node)
+  (cfg-node-case (tagged-vector/tag node)
+    ((APPLICATION) (application->sexp node))
+    ((PARALLEL) (parallel->sexp node))
+    ((ASSIGNMENT) (assignment->sexp node))
+    ((DEFINITION) (definition->sexp node))
+    ((TRUE-TEST) (true-test->sexp node))
+    ((FG-NOOP) (fg-noop->sexp node))
+    ((VIRTUAL-RETURN) (virtual-return->sexp node))
+    ((POP) (pop->sexp node))
+    ((STACK-OVERWRITE) (stack-overwrite->sexp node))
+    (else (error "invalid"))))
+
+(define (application->sexp app)
+  (let* ((operator (rvalue->sexp (application-operator app)))
+	 (operands (map rvalue->sexp (application-operands app)))
+	 (next (snode-next->sexp* app)))
+    (cond ((and (eq? 'COMBINATION (application-type app))
+		(rvalue/procedure? (car (application-operands app))))
+	   (let ((cont (car operands)))
+	     (assert (eq? 'LAMBDA (car cont)))
+	     (let ((bvl (cadr cont))
+		   (body (cddr cont)))
+	       (assert (= 1 (length bvl)))
+	       (let ((var (car bvl)))
+		 `((LET ((,var (,operator ,@(cdr operands))))
+		     ,@body
+		     ,@next))))))
+	  ((and (eq? 'RETURN (application-type app))
+		(rvalue/procedure? (application-operator app)))
+	   (let ((cont operator))
+	     (assert (eq? 'LAMBDA (car cont)))
+	     (let ((vars (cadr cont))
+		   (body (cddr cont)))
+	       (assert (list? vars))
+	       (assert (not (memq #!optional vars)))
+	       `((LET ,(map list vars operands)
+		   ,@body
+		   ,@next)))))
+	  (else
+	   `((,operator ,@operands)
+	     ,@next)))))
+
+(define (parallel->sexp par)
+  (let ((subproblems (parallel-subproblems par)))
+    (define (subproblem-variable subproblem)
+      (and (subproblem-canonical? subproblem)
+	   (variable-id
+	    (car (procedure-required (subproblem-continuation subproblem))))))
+    (define (subproblem-expression subproblem)
+      (and (subproblem-canonical? subproblem)
+	   (node->sexp (subproblem-entry-node subproblem))))
+    (assert (eq? (snode-next par) (parallel-application-node par)))
+    (let* ((vars (filter-map subproblem-variable subproblems))
+	   (exps (filter-map subproblem-expression subproblems))
+	   (app (node->sexp* (parallel-application-node par))))
+      `((PARALLEL ,@(map list vars exps))
+	,@app))))
+
+(define (assignment->sexp assignment)
+  (let* ((lvalue (variable-id (assignment-lvalue assignment)))
+	 (rvalue (rvalue->sexp (assignment-rvalue assignment)))
+	 (next (snode-next->sexp* assignment)))
+    `((SET! ,lvalue ,rvalue)
+      ,@next)))
+
+(define (definition->sexp def)
+  (let* ((lvalue (variable-id (definition-lvalue def)))
+	 (rvalue (rvalue->sexp (definition-rvalue def)))
+	 (next (snode-next->sexp* def)))
+    `((DEFINE ,lvalue ,rvalue)
+      ,@next)))
+
+(define (true-test->sexp test)
+  (let* ((rvalue (rvalue->sexp (true-test-rvalue test)))
+	 (con (node->sexp (pnode-consequent test)))
+	 (alt (node->sexp (pnode-alternative test))))
+    ;; XXX Find the join point and follow with it?
+    `((IF ,rvalue ,con ,alt))))
+
+(define (fg-noop->sexp node)
+  `((NOOP)
+    ,@(snode-next->sexp* node)))
+
+(define (virtual-return->sexp vret)
+  (let* ((type
+	  (enumeration/index->name continuation-types
+				   (virtual-continuation/type
+				    (virtual-return-operator vret))))
+	 (operand
+	  (let ((operand (virtual-return-operand vret)))
+	    (if (rvalue/continuation? operand)
+		(continuation-id operand)
+		(rvalue->sexp operand))))
+	 (next (snode-next->sexp* vret)))
+    `((VIRTUAL ,type ,operand)
+      ,@next)))
+
+(define (pop->sexp pop)
+  (let* ((cont (continuation-id (pop-continuation pop)))
+	 (next (snode-next->sexp* pop)))
+    `((POP ,cont)
+      ,@next)))
+
+(define (stack-overwrite->sexp so)
+  (let* ((target (variable-id (stack-overwrite-target so)))
+	 (cont (continuation-id (stack-overwrite-continuation so)))
+	 (next (snode-next->sexp* so)))
+    `((STACK-OVERWRITE ,target ,cont)
+      ,@next)))
+
+(define (rvalue->sexp rvalue)
+  (cond ((reference? rvalue) (reference->sexp rvalue))
+	((procedure? rvalue) (procedure->sexp rvalue))
+	((constant? rvalue) (constant->sexp rvalue))
+	((block? rvalue) (block->sexp rvalue))
+	((unassigned-test? rvalue) (unassigned-test->sexp rvalue))
+	((expression? rvalue) (expression->sexp rvalue))
+	(else rvalue)))
+
+(define (reference->sexp rvalue)
+  (variable-id (reference-lvalue rvalue)))
+
+(define (procedure->sexp proc)
+  (let* ((bvl
+	  (procedure-bvl->sexp (procedure-required proc)
+			       (procedure-optional proc)
+			       (procedure-rest proc)))
+	 (defs
+	  (procedure-defs->sexp (procedure-names proc)
+				(procedure-values proc)))
+	 (body
+	  (node->sexp* (procedure-entry-node proc))))
+    `(LAMBDA ,bvl
+       '(,(procedure-id proc)
+	 ,(enumeration/index->name continuation-types (procedure-type proc)))
+       ,@defs
+       ,@body)))
+
+(define (procedure-bvl->sexp req opt rest)
+  (let* ((req (map variable-id req))
+	 (opt (map variable-id opt))
+	 (rest (and rest (variable-id rest))))
+    `(,@req ,@(if (pair? opt) `(#!OPTIONAL ,@opt) '()) . ,(or rest '()))))
+
+(define (procedure-defs->sexp names values)
+  (map (lambda (name value)
+	 (let* ((var (variable-id name))
+		(val (rvalue->sexp value)))
+	   `(DEFINE ,var ,val)))
+       names values))
+
+(define (constant->sexp const)
+  `',(constant-value const))
+
+(define (block->sexp block)
+  '(block))				;XXX ?
+
+(define (unassigned-test->sexp ut)
+  `(UNASSIGNED? ,(variable-id (unassigned-test-lvalue ut))))
+
+(define (expression->sexp exp)
+  (let* ((cont (variable-id (expression-continuation exp)))
+	 (body (node->sexp* (expression-entry-node exp))))
+    `(LAMBDA (,cont) 'EXPRESSION ,@body)))
+
+(define (variable-id var)
+  (symbol (case (variable-name var)
+	    ((|#[continuation]|) 'c)	;abbreviate
+	    ((|#[value]|) 'v)
+	    (else (variable-name var)))
+	  "." (hash-object var)))
+
+(define (procedure-id proc)
+  (if (procedure-continuation? proc)
+      (let ((label (symbol->string (procedure-label proc)))
+	    (prefix "continuation-"))
+	;; Abbreviate a little bit for legibility.
+	(assert (string-prefix? prefix label))
+	(symbol 'C- (substring label (string-length prefix))))
+      (procedure-label proc)))
+
+(define (continuation-id cont)
+  (if (procedure? cont)
+      (procedure-id cont)
+      (begin
+	(assert (virtual-continuation? cont))
+	(symbol 'VC. (hash-object cont)))))

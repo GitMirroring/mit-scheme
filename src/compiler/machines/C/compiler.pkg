@@ -291,6 +291,7 @@ USA.
 	  debug/find-procedure
 	  debug/where
 	  dump-rtl
+	  fg->sexp
 	  po
 	  show-bblock-rtl
 	  show-fg
