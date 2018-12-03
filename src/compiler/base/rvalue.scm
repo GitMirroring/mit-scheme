@@ -116,7 +116,8 @@ USA.
 (define-vector-tag-unparser reference-tag
   (standard-print-method "LIAR:reference"
     (lambda (reference)
-      (list (variable-name (reference-lvalue reference))))))
+      (list (variable-name (reference-lvalue reference))
+	    (hash-object (reference-lvalue reference))))))
 
 (define-integrable (rvalue/reference? rvalue)
   (eq? (tagged-vector/tag rvalue) reference-tag))
