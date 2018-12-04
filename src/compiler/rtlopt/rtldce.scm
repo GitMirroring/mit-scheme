@@ -204,8 +204,9 @@ USA.
       ;; XXX Check recursively for things that are not register
       ;; references, and rule out the branch in those cases.
       (if (or (equal? exp1 exp2)
-	      (equal? (expression-known-value exp1 bblock)
-		      (expression-known-value exp2 bblock)))
+	      (let ((val1 (expression-known-value exp1 bblock))
+		    (val2 (expression-known-value exp2 bblock)))
+		(and val1 val2 (equal? val1 val2))))
 	  #t
 	  'BOTH))))
 
