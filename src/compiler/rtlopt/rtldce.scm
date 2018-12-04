@@ -210,7 +210,7 @@ USA.
 	  (exp2 (rtl:eq-test-expression-2 stmt)))
       ;; XXX Check recursively for things that are not register
       ;; references, and rule out the branch in those cases.
-      (if (or (equal? exp1 exp1)
+      (if (or (equal? exp1 exp2)
 	      (equal? (expression-known-value exp1 bblock)
 		      (expression-known-value exp2 bblock)))
 	  #t
