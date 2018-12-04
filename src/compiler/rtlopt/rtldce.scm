@@ -28,6 +28,13 @@ USA.
 
 (declare (usual-integrations))
 
+;(define dce:trace? #t)
+(define-integrable dce:trace? #f)
+
+(define-integrable (dce-trace obj)
+  (if dce:trace?
+      (pp obj)))
+
 ;;; (DEAD-BRANCH-ELIMINATION <rgraphs>)
 ;;;
 ;;;	Prune dead branches in <rgraphs>, replacing pnodes by snodes
@@ -58,38 +65,13 @@ USA.
 (define (dead-block-elimination rgraphs root procedures continuations)
   (with-new-node-marks
     (lambda ()
-      (let ((entry-bblock
-	     (cond ((rtl-expr? root) (rtl-expr/entry-node root))
-		   ((rtl-procedure? root) (rtl-procedure/entry-node root))
-		   (else (error "Invalid RTL root:" root))))
-	    (queue (make-queue)))
-	;; Mark the root entry bblock reachable.  Then trace everything
-	;; bblock from it with a breadth-first search.
-	(bblock-reachable! entry-bblock queue)
-	(do () ((queue-empty? queue))
-	  (trace-reachable-bblocks! (dequeue! queue) queue))
-	;; Compute the subsets of procedures and continuations,
-	;; respectively, whose entry edges are marked as reachable from
-	;; the root.
-	(let ((procedures
-	       (filter (lambda (procedure)
-			 (node-marked? (rtl-procedure/entry-node procedure)))
-		       procedures))
-	      (continuations
-	       (filter (lambda (continuation)
-			 (node-marked?
-			  (rtl-continuation/entry-node continuation)))
-		       continuations)))
-	  ;; Prune any rgraph entry edges that were not reachable.
-	  (for-each
-	   (lambda (rgraph)
-	     (set-rgraph-entry-edges!
-	      rgraph
-	      (filter (lambda (edge)
-			(node-marked? (edge-right-node edge)))
-		      (rgraph-entry-edges rgraph))))
-	   rgraphs)
-	  (values procedures continuations))))))
+      (trace-reachable-bblocks!
+       (cond ((rtl-expr? root) (rtl-expr/entry-node root))
+	     ((rtl-procedure? root) (rtl-procedure/entry-node root))
+	     (else (error "Invalid RTL root:" root))))
+      (for-each prune-unreachable-bblocks! rgraphs)
+      (values (prune-unreachable-procedures procedures)
+	      (prune-unreachable-continuations continuations)))))
 
 ;;; (PRUNE-BRANCH-IF-DEAD! <bblock> <rgraph>)
 ;;;
@@ -106,6 +88,7 @@ USA.
 	  ((lookup-pruning-method (rtl:expression-type rtl)) rtl bblock)))
     (case decision
       ((#f #t)
+       (dce-trace `(prune branch ,bblock ,rtl => ,decision))
        ;; We can decide.  Get the edges, and pick which one is live and
        ;; which one is dead.
        (let ((consequent-edge (pnode-consequent-edge bblock))
@@ -126,15 +109,18 @@ USA.
 	   (let ((next (edge-next-node live-edge)))
 	     (let* ((rinst (bblock-instructions bblock))
 		    (rinst* (rinst-next rinst)))
-	       (set-bblock-instructions! bblock '()) ;paranoia
+	       (set-bblock-instructions! bblock (cons 'dead rinst)) ;paranoia
 	       (if rinst*
 		   (begin
+		     ;; Delete all but the last instruction.
 		     (let loop ((rinst rinst) (rinst* rinst*))
 		       (let ((rinst** (rinst-next rinst*)))
 			 (if rinst**
 			     (loop rinst* rinst**)
 			     (set-rinst-next! rinst #f))))
+		     ;; Create a replacement sblock.
 		     (let ((bblock* (make-sblock rinst)))
+		       (dce-trace `(add ,bblock* replacing ,bblock))
 		       (add-rgraph-bblock! rgraph bblock*)
 		       ;; Set the predecessors to point at
 		       ;; bblock* instead.
@@ -148,9 +134,16 @@ USA.
 		       (create-edge! bblock* set-snode-next-edge! next)
 		       bblock*))
 		   (begin
+		     (dce-trace `(add nothing replacing ,bblock))
+		     ;; Set the predecessors to point at next instead.
 		     (node-replace-on-right! bblock next)
+		     ;; Disconnect bblock's edges to its live and dead
+		     ;; successors.
+		     (edge-disconnect-right! live-edge)
+		     (edge-disconnect-right! dead-edge)
 		     next))))))
        ;; This bblock is no longer wired, so delete it from the rgraph.
+       (dce-trace `(delete ,bblock))
        (delete-rgraph-bblock! rgraph bblock)
        #t)
       ((BOTH)
@@ -236,33 +229,39 @@ USA.
     stmt bblock
     'BOTH))
 
-;;; (TRACE-REACHABLE-BLOCKS! <bblock> <queue>)
+;;; (TRACE-REACHABLE-BLOCKS! <entry-bblock>)
 ;;;
-;;;	For each bblock reachable from <bblock>, either as a successor
-;;;	or by reference in an RTL instruction, add it to <queue> with
-;;;	BBLOCK-REACHABLE!.
+;;;	Perform a breadth-first search to mark every bblock reachable
+;;;	from <entry-bblock>.
 
-(define (trace-reachable-bblocks! bblock queue)
-  (bblock-walk-forward bblock
-    (lambda (rinst)
-      (let loop ((rtl (rinst-rtl rinst)))
-	(cond ((rtl:assign? rtl)
-	       (rtl:for-each-subexpression rtl loop))
-	      ((rtl:register? rtl)
-	       unspecific)
-	      ((lookup-reachability-method (rtl:expression-type rtl))
-	       => (lambda (method)
-		    (method rtl queue)))
-	      (else
-	       (rtl:for-each-subexpression rtl loop))))))
-  (if (snode? bblock)
-      (let ((next (snode-next bblock)))
-	(if next (bblock-reachable! next queue)))
-      (let ((consequent (pnode-consequent bblock))
-	    (alternative (pnode-alternative bblock)))
-	(if consequent (bblock-reachable! consequent queue))
-	(if alternative (bblock-reachable! alternative queue))))
-  unspecific)
+(define (trace-reachable-bblocks! entry-bblock)
+  (let ((queue (make-queue)))
+    (bblock-reachable! entry-bblock queue)
+    (do () ((queue-empty? queue))
+      (let ((bblock (dequeue! queue)))
+	(bblock-walk-forward bblock
+	  (lambda (rinst)
+	    (let loop ((rtl (rinst-rtl rinst)))
+	      (cond ((rtl:assign? rtl)
+		     (rtl:for-each-subexpression rtl loop))
+		    ((rtl:register? rtl)
+		     unspecific)
+		    ((lookup-reachability-method (rtl:expression-type rtl))
+		     => (lambda (method)
+			  (method rtl queue)))
+		    (else
+		     (rtl:for-each-subexpression rtl loop))))))
+	(if (snode? bblock)
+	    (let ((next (snode-next bblock)))
+	      (if next (bblock-reachable! next queue))
+	      unspecific)
+	    (let ((consequent (pnode-consequent bblock))
+		  (alternative (pnode-alternative bblock)))
+	      (if consequent (bblock-reachable! consequent queue))
+	      (if alternative (bblock-reachable! alternative queue))
+	      unspecific))
+	unspecific))
+    unspecific))
 
 (define (bblock-reachable! bblock queue)
   (if (not (node-marked? bblock))
@@ -297,7 +296,7 @@ USA.
 	(error "Redefining block reachability method:" type method)))
   (set! reachability-methods (cons (cons type method) reachability-methods))
   type)
-
+
 (define-reachability-method 'ENTRY:PROCEDURE
   (lambda (rtl queue)
     (let ((label (rtl:entry:procedure-procedure rtl)))
@@ -309,7 +308,7 @@ USA.
     (let ((label (rtl:entry:continuation-continuation rtl)))
       (continuation-reachable-by-label! label queue))
     unspecific))
-
+
 (define-reachability-method 'INVOCATION:APPLY
   (lambda (rtl queue)
     (let ((label (rtl:invocation:apply-continuation rtl)))
@@ -340,7 +339,7 @@ USA.
     (procedure-reachable-by-label! (rtl:invocation:lexpr-procedure rtl)
 				   queue)
     unspecific))
-
+
 (define-reachability-method 'INVOCATION:COMPUTED-LEXPR
   (lambda (rtl queue)
     (let ((label (rtl:invocation:lexpr-continuation rtl)))
@@ -389,3 +388,82 @@ USA.
       (if label
 	  (continuation-reachable-by-label! label queue)))
     unspecific))
+
+;;; (PRUNE-UNREACHABLE-BBLOCKS! <rgraph>)
+;;;
+;;;	For each bblock in <rgraph> that is not marked, meaning it is
+;;;	not reachable from the entry, disconnect that bblock from the
+;;;	CFG so that no reachable bblock has a previous edge originating
+;;;	from it, and remove it from <rgraph>'s list of bblocks.  For
+;;;	each entry edge in <rgraph> to a bblock that is unreachable,
+;;;	remove that entry edge from <rgraph>'s list of entry edges.
+
+(define (prune-unreachable-bblocks! rgraph)
+  (let ((deletions '()))
+    ;; Disconnect the unreachable bblocks and add them to the list of
+    ;; deletions.
+    (for-each (lambda (bblock)
+		(define (disconnect! edge)
+		  (if edge
+		      (begin
+			(dce-trace
+			 `(disconnect ,bblock => ,(edge-right-node edge)))
+			(edge-disconnect-right! edge))))
+		(if (not (node-marked? bblock))
+		    (begin
+		      (dce-trace `(prune block ,bblock))
+		      (set! deletions (cons bblock deletions))
+		      (if (snode? bblock)
+			  (disconnect! (snode-next-edge bblock))
+			  (begin
+			    (disconnect! (pnode-consequent-edge bblock))
+			    (disconnect! (pnode-alternative-edge bblock))))))
+		unspecific)
+	      (rgraph-bblocks rgraph))
+    ;; Confirm that we deleted all the dead predecessors.
+    (for-each (lambda (bblock)
+		(if (node-marked? bblock)
+		    (for-each (lambda (edge)
+				(let ((predecessor (edge-left-node edge)))
+				  (if predecessor
+				      (assert (node-marked? predecessor)))
+				  unspecific))
+			      (node-previous-edges bblock)))
+		unspecific)
+	      (rgraph-bblocks rgraph))
+    ;; Perform deletions on the list of bblocks.
+    (set-rgraph-bblocks! rgraph
+			 (eq-set-difference (rgraph-bblocks rgraph)
+					    deletions)))
+  ;; Delete the entry edges connected to unreachable bblocks.
+  (set-rgraph-entry-edges!
+   rgraph
+   (filter (lambda (edge)
+	     (if (not (node-marked? (edge-right-node edge)))
+		 (dce-trace `(prune entry ,(edge-right-node edge))))
+	     (node-marked? (edge-right-node edge)))
+	   (rgraph-entry-edges rgraph))))
+
+;;; (PRUNE-UNREACHABLE-PROCEDURES <procedures>)
+;;;
+;;;	Return a list of the procedures in the list <procedures> whose
+;;;	entry bblocks are reachable.
+
+(define (prune-unreachable-procedures procedures)
+  (filter (lambda (procedure)
+	    (if (not (node-marked? (rtl-procedure/entry-node procedure)))
+		(dce-trace `(prune procedure ,procedure)))
+	    (node-marked? (rtl-procedure/entry-node procedure)))
+	  procedures))
+
+;;; (PRUNE-UNREACHABLE-CONTINUATIONS <continuations>)
+;;;
+;;;	Return a list of the continuations in the list <continuations>
+;;;	whose entry bblocks are reachable.
+
+(define (prune-unreachable-continuations continuations)
+  (filter (lambda (continuation)
+	    (if (not (node-marked? (rtl-continuation/entry-node continuation)))
+		(dce-trace `(prune continuation ,continuation)))
+	    (node-marked? (rtl-continuation/entry-node continuation)))
+	  continuations))
