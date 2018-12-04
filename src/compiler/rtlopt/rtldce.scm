@@ -230,6 +230,11 @@ USA.
   (lambda (stmt bblock)
     stmt bblock
     'BOTH))
+
+(define-pruning-method 'OVERFLOW-TEST
+  (lambda (stmt bblock)
+    stmt bblock
+    'BOTH))
 
 ;;; (TRACE-REACHABLE-BLOCKS! <bblock> <queue>)
 ;;;
