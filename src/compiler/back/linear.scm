@@ -136,7 +136,7 @@ USA.
 			      ,@consequent
 			      ,@(lap:make-label-statement jlabel)
 			      ,@(linearize-next cn))))))))))
-	(cond ((eq? cn an)
+	(cond ((or (eq? cn an) (pnode/preferred-branch pblock))
 	       ;;(warn "bblock-linearize-lap: Identical branches" pblock)
 	       (unspecial))
 	      ((sblock? cn)
