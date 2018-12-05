@@ -108,17 +108,7 @@ USA.
 		    ,@(if (node-marked? cn)
 			  (LAP)
 			  (linearize-bblock cn)))))))
-      (let ((consequent-first
-	     (lambda ()
-	       (LAP ,@(lap:comment '(CONSEQUENT FIRST))
-		    ,@(finish
-		       (pblock-alternative-lap-generator pblock) an cn))))
-	    (alternative-first
-	     (lambda ()
-	       (LAP ,@(lap:comment '(ALTERNATIVE FIRST))
-		    ,@(finish
-		       (pblock-consequent-lap-generator pblock) cn an))))
-	    (unspecial
+      (let ((unspecial
 	     (lambda ()
 	       (forward-preference pblock cn an finish)))
 	    (diamond
@@ -136,44 +126,60 @@ USA.
 			      ,@consequent
 			      ,@(lap:make-label-statement jlabel)
 			      ,@(linearize-next cn))))))))))
-	(cond ((or (eq? cn an) (pnode/preferred-branch pblock))
-	       ;;(warn "bblock-linearize-lap: Identical branches" pblock)
-	       (unspecial))
-	      ((sblock? cn)
-	       (let ((cnn (find-next (snode-next cn))))
-		 (cond ((eq? cnn an)
-			(consequent-first))
-		       ((sblock? an)
-			(let ((ann (find-next (snode-next an))))
-			  (cond ((eq? ann cn)
-				 (alternative-first))
-				((not cnn)
-				 (if ann
-				     (consequent-first)
-				     (if (null? (bblock-continuations cn))
-					 (if (null? (bblock-continuations an))
-					     (unspecial)
-					     (consequent-first))
-					 (if (null? (bblock-continuations an))
-					     (alternative-first)
-					     (unspecial)))))
-				((not ann)
-				 (alternative-first))
-				((eq? cnn ann)
-				 (diamond))
-				(else
-				 (unspecial)))))
-		       ((not cnn)
-			(consequent-first))
-		       (else
-			(unspecial)))))
-	      ((and (sblock? an)
-		    (let ((ann (find-next (snode-next an))))
-		      (or (not ann)
-			  (eq? ann cn))))
-	       (alternative-first))
-	      (else
-	       (unspecial))))))
+	(let ((consequent-first
+	       (lambda ()
+		 (if (pnode/preferred-branch pblock)
+		     (unspecial)
+		     (LAP ,@(lap:comment '(UNPREDICTED CONSEQUENT FIRST))
+			  ,@(finish (pblock-alternative-lap-generator pblock)
+				    an
+				    cn)))))
+	      (alternative-first
+	       (lambda ()
+		 (if (pnode/preferred-branch pblock)
+		     (unspecial)
+		     (LAP ,@(lap:comment '(UNPREDICTED ALTERNATIVE FIRST))
+			  ,@(finish (pblock-consequent-lap-generator pblock)
+				    cn
+				    an))))))
+	  (cond ((eq? cn an)
+		 ;;(warn "bblock-linearize-lap: Identical branches" pblock)
+		 (unspecial))
+		((sblock? cn)
+		 (let ((cnn (find-next (snode-next cn))))
+		   (cond ((eq? cnn an)
+			  (consequent-first))
+			 ((sblock? an)
+			  (let ((ann (find-next (snode-next an))))
+			    (cond ((eq? ann cn)
+				   (alternative-first))
+				  ((not cnn)
+				   (if ann
+				       (consequent-first)
+				       (if (null? (bblock-continuations cn))
+					   (if (null? (bblock-continuations an))
+					       (unspecial)
+					       (consequent-first))
+					   (if (null? (bblock-continuations an))
+					       (alternative-first)
+					       (unspecial)))))
+				  ((not ann)
+				   (alternative-first))
+				  ((eq? cnn ann)
+				   (diamond))
+				  (else
+				   (unspecial)))))
+			 ((not cnn)
+			  (consequent-first))
+			 (else
+			  (unspecial)))))
+		((and (sblock? an)
+		      (let ((ann (find-next (snode-next an))))
+			(or (not ann)
+			    (eq? ann cn))))
+		 (alternative-first))
+		(else
+		 (unspecial)))))))
 
   ;; We are going to either branch to a preceding label, or continue
   ;; forward.  If backward branches are statically predicted not taken,
