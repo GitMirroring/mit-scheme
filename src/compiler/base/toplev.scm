@@ -651,8 +651,27 @@ USA.
        (lambda ()
 	 (set! *input-scode* scode)
 	 (phase/fg-generation)
-	 (phase/fg-optimization)
+	 (call-with-append-file "/tmp/riastradh/20181127/fg.dump"
+	   (lambda (port)
+	     (declare (ignorable port))
+	     (if #f
+		 (begin
+		   (pp 'scode port)
+		   (pp scode port)
+		   (newline port)
+		   (pp 'pre-optimization port)
+		   (pp (fg->sexp *root-expression*) port)))
+	     (phase/fg-optimization)
+	     (if #f
+		 (begin
+		   (newline port)
+		   (pp 'post-optimization port)
+		   (pp (fg->sexp *root-expression*) port)
+		   (newline port)))))
 	 (phase/rtl-generation)
+	 #;
+	 (if rtl-output-port
+	     (phase/rtl-file-output scode rtl-output-port))
 	 (phase/rtl-optimization)
 	 (if rtl-output-port
 	     (phase/rtl-file-output scode rtl-output-port))
@@ -668,8 +687,8 @@ USA.
   (if compiler:show-phases?
       (compiler-phase/visible name
 	(lambda ()
-	  (compiler-phase/invisible thunk)))
-      (compiler-phase/invisible thunk)))
+	  (compiler-phase/invisible name thunk)))
+      (compiler-phase/invisible name thunk)))
 
 (define (compiler-superphase name thunk)
   (if compiler:show-subphases?
@@ -679,7 +698,7 @@ USA.
 (define (compiler-subphase name thunk)
   (if compiler:show-subphases?
       (compiler-phase name thunk)
-      (compiler-phase/invisible thunk)))
+      (compiler-phase/invisible name thunk)))
 
 (define (compiler-phase/visible name thunk)
   (let ((thunk
@@ -698,22 +717,66 @@ USA.
 
 (define *phase-level* 0)
 
-(define (compiler-phase/invisible thunk)
+(define-integrable nanotime-since-utc-epoch
+  (ucode-primitive nanotime-since-utc-epoch 1))
+
+(define (compiler-phase/invisible name thunk)
   (fluid-let ((*phase-level* (1+ *phase-level*)))
     (let ((do-it
 	   (if compiler:phase-wrapper
 	       (lambda () (compiler:phase-wrapper thunk))
 	       thunk)))
-      (if (= 1 *phase-level*)
-	  (let ((process-start (process-time-clock))
-		(real-start (real-time-clock)))
-	    (let ((value (do-it)))
-	      (let ((process-delta (- (process-time-clock) process-start))
-		    (real-delta (- (real-time-clock) real-start)))
-		(set! *process-time* (+ process-delta *process-time*))
-		(set! *real-time* (+ real-delta *real-time*)))
-	      value))
+      (if (or #t (= 1 *phase-level*))
+	  (let ((real-start (cons 0 0))
+		(real-end (cons 0 0)))
+	    (let ((process-start (process-time-clock)))
+	      (nanotime-since-utc-epoch real-start)
+	      (let ((value (do-it)))
+		(nanotime-since-utc-epoch real-end)
+		(let ((process-delta (- (process-time-clock) process-start))
+		      (real-delta
+		       (+ (- (car real-end) (car real-start))
+			  (/ (- (cdr real-end) (cdr real-start)) 1e9))))
+		  (if (and *compiler-times*
+			   (or *procedure-result?*
+			       (string=? name "Total compilation time")))
+		      (hash-table-update!/default *compiler-times* name
+			(lambda (times)
+			  (cons (+ (car times) process-delta)
+				(+ (cdr times) real-delta)))
+			(cons 0 0)))
+		  (set! *process-time* (+ process-delta *process-time*))
+		  (set! *real-time* (+ real-delta *real-time*)))
+		value)))
 	  (do-it)))))
+
+(define *compiler-times* #f)
+
+(define (aggregate-compiler-times procedure)
+  (let ((times (make-string-hash-table)))
+    (begin0 (fluid-let ((*compiler-times* times))
+	      (procedure))
+      (let ((alist (hash-table->alist times)))
+	(let ((process-times
+	       (sort alist
+		     (lambda (a b)
+		       (or (< (cadr a) (cadr b))
+			   (and (= (cadr a) (cadr b))
+				(string<? (car a) (car b)))))))
+	      (real-times
+	       (sort alist
+		     (lambda (a b)
+		       (or (< (cddr a) (cddr b))
+			   (and (= (cadr a) (cadr b))
+				(string<? (car a) (car b))))))))
+	  (pp "PROCESS TIMES")
+	  (for-each (lambda (entry)
+		      (pp `(,(car entry) ,(cadr entry))))
+		    process-times)
+	  (pp "REAL TIMES")
+	  (for-each (lambda (entry)
+		      (pp `(,(car entry) ,(cddr entry))))
+		    real-times))))))
 
 (define (compiler-time-report prefix process-time real-time)
   (write-notification-line
@@ -980,23 +1043,59 @@ USA.
 (define (phase/rtl-optimization)
   (compiler-superphase "RTL Optimization"
     (lambda ()
+      ;; Dead code elimination uses the output of dataflow analysis and
+      ;; control flow analysis to prune blocks that can be proven
+      ;; unreachable.  Common subexpression elimination and invertible
+      ;; expression elimination use the output of dataflow analysis to
+      ;; find and contract compound aliases.
+      ;;
+      ;; These, in turn, enable dataflow analysis and control flow
+      ;; analysis to prove stronger theorems about the program, which
+      ;; enable more opportunities for DCE, CSE, and IEE.
+      ;;
+      ;; The most expensive pass of the compiler is generally common
+      ;; subexpression elimination.  So try to prune as much dead code
+      ;; as we can, by iterating DFA, CFA, and DCE, before we try CSE;
+      ;; then iterate the whole process until we've pruned all the code
+      ;; we can.
       (let loop ((n 1))
 	(phase/rtl-dataflow-analysis)
+	(phase/rtl-control-flow-analysis)
+	(if (phase/dead-branch-elimination)
+	    (begin
+	      (phase/dead-block-elimination)
+	      (if (< n 10)
+		  (loop (+ n 1))
+		  (write-notification-line
+		   (lambda (port)
+		     (write-string "Stopping at 10 iterations of pruning" port)
+		     #;
+		     (pp `(gave up after ,n iterations))))))
+	    #;
+	    (pp `(converged after ,n iterations))))
+      (let loop ((n 1))
 	(phase/rtl-rewriting rtl-rewriting:pre-cse)
+	;; Dead branch elimination may invalidate control flow
+	;; analysis, so redo it.
+	(phase/rtl-control-flow-analysis)
 	(if compiler:cse?
 	    (phase/common-subexpression-elimination))
 	(phase/invertible-expression-elimination)
 	(phase/rtl-rewriting rtl-rewriting:post-cse)
 	(phase/rtl-dataflow-analysis)
-	(if (phase/dead-code-elimination)
-	    (if (< n 100)
-		(loop (+ n 1))
-		(write-notification-line
-		 (lambda (port)
-		   (write-string "Stopping at 100 iterations of pruning"
-				 port)
-		   (pp `(gave up after ,n iterations)))))
-	    (pp `(converged after ,n iterations))))
+	(phase/rtl-control-flow-analysis)
+	(if (phase/dead-branch-elimination)
+	    (begin
+	      (phase/dead-block-elimination)
+	      (If (< n 10)
+		  (loop (+ n 1))
+		  (write-notification-line
+		   (lambda (port)
+		     (write-string "Outer: Stopping at 10 iterations" port)
+		     #;
+		     (pp `(gave up outer after ,n iterations))))))
+	    #;
+	    (pp `(outer converged after ,n iterations))))
       (phase/common-suffix-merging)
       (phase/lifetime-analysis)
       (if compiler:code-compression?
@@ -1008,61 +1107,79 @@ USA.
 (define (phase/rtl-dataflow-analysis)
   (compiler-subphase "RTL Dataflow Analysis"
     (lambda ()
-      (rtl-dataflow-analysis *rtl-graphs*))))
+      (rtl-dataflow-analysis *rtl-graphs*)
+      unspecific)))
+
+(define (phase/rtl-control-flow-analysis)
+  (compiler-subphase "RTL Control Flow Analysis"
+    (lambda ()
+      (rtl-control-flow-analysis *rtl-graphs*)
+      unspecific)))
 
 (define (phase/rtl-rewriting rtl-rewriting)
   (compiler-subphase "RTL Rewriting"
     (lambda ()
-      (rtl-rewriting *rtl-graphs*))))
+      (rtl-rewriting *rtl-graphs*)
+      unspecific)))
 
 (define (phase/common-subexpression-elimination)
   (compiler-subphase "Common Subexpression Elimination"
     (lambda ()
-      (common-subexpression-elimination *rtl-graphs*))))
+      (common-subexpression-elimination *rtl-graphs*)
+      unspecific)))
 
 (define (phase/invertible-expression-elimination)
   (compiler-subphase "Invertible Expression Elimination"
     (lambda ()
-      (invertible-expression-elimination *rtl-graphs*))))
+      (invertible-expression-elimination *rtl-graphs*)
+      unspecific)))
 
-(define (phase/dead-code-elimination)
-  (compiler-subphase "Dead Code Elimination"
+(define (phase/dead-branch-elimination)
+  (compiler-subphase "Dead Branch Elimination"
     (lambda ()
-      (and (dead-branch-elimination *rtl-graphs*)
-	   (begin
-	     (receive (procedures continuations)
-		      (dead-block-elimination *rtl-graphs*
-					      *rtl-root*
-					      *rtl-procedures*
-					      *rtl-continuations*)
-	       (set! *rtl-procedures* procedures)
-	       (set! *rtl-continuations* continuations)
-	       #t))))))
+      (and (dead-branch-elimination *rtl-graphs*) #t))))
+
+(define (phase/dead-block-elimination)
+  (compiler-subphase "Dead Block Elimination"
+    (lambda ()
+      (receive (procedures continuations)
+	       (dead-block-elimination *rtl-graphs*
+				       *rtl-root*
+				       *rtl-procedures*
+				       *rtl-continuations*)
+	(set! *rtl-procedures* procedures)
+	(set! *rtl-continuations* continuations)
+	unspecific))))
 
 (define (phase/common-suffix-merging)
   (compiler-subphase "Common Suffix Merging"
     (lambda ()
-      (merge-common-suffixes! *rtl-graphs*))))
+      (merge-common-suffixes! *rtl-graphs*)
+      unspecific)))
 
 (define (phase/lifetime-analysis)
   (compiler-subphase "Lifetime Analysis"
     (lambda ()
-      (lifetime-analysis *rtl-graphs*))))
+      (lifetime-analysis *rtl-graphs*)
+      unspecific)))
 
 (define (phase/code-compression)
   (compiler-subphase "Instruction Combination"
     (lambda ()
-      (code-compression *rtl-graphs*))))
+      (code-compression *rtl-graphs*)
+      unspecific)))
 
 (define (phase/linearization-analysis)
   (compiler-subphase "Linearization Analysis"
     (lambda ()
-      (setup-bblock-continuations! *rtl-graphs*))))
+      (setup-bblock-continuations! *rtl-graphs*)
+      unspecific)))
 
 (define (phase/register-allocation)
   (compiler-subphase "Register Allocation"
     (lambda ()
-      (register-allocation *rtl-graphs*))))
+      (register-allocation *rtl-graphs*)
+      unspecific)))
 
 (define (phase/rtl-optimization-cleanup)
   (if (not compiler:preserve-data-structures?)
@@ -1081,6 +1198,13 @@ USA.
   (compiler-phase "RTL File Output"
     (lambda ()
       (rtl/lap-file-header "RTL" scode port)
+      #;
+      (dump-rtl-full *rtl-root*
+		     *rtl-continuations*
+		     *rtl-procedures*
+		     *rtl-graphs*
+		     port)
+      ;#;
       (write-rtl-instructions (linearize-rtl *rtl-root*
 					     *rtl-procedures*
 					     *rtl-continuations*)

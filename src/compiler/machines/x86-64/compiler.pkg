@@ -279,6 +279,7 @@ USA.
 	  debug/find-procedure
 	  debug/where
 	  dump-rtl
+	  dump-rtl-full
 	  fg->sexp
 	  po
 	  show-bblock-rtl
@@ -626,10 +627,12 @@ USA.
   (parent (compiler rtl-optimizer))
   (export (compiler top-level) invertible-expression-elimination))
 
+;; XXX Split this into two separate packages.
 (define-package (compiler rtl-optimizer dead-code-elimination)
-  (files "rtlopt/rtldce")
+  (files "rtlopt/rtldce" "rtlopt/rtlcfa")
   (parent (compiler rtl-optimizer))
   (export (compiler top-level)
+	  rtl-control-flow-analysis
 	  dead-branch-elimination
 	  dead-block-elimination))
 

@@ -373,16 +373,22 @@ USA.
       continuation-label
       primitive))))
 
+(define *type-error-number* 0)
+
 (define (generate-error label)
   (scfg*scfg->scfg!
-   (let loop ((args '("Unrecoverable type error" () #f)))
-     (if (null? args)
-	 (rtl:make-push-return label)
-	 (load-temporary-register scfg*scfg->scfg!
-				  (rtl:make-constant (car args))
-	   (lambda (temporary)
-	     (scfg*scfg->scfg! (loop (cdr args))
-			       (rtl:make-push temporary))))))
+   (let* ((number (set! *type-error-number* (1+ *type-error-number*)))
+	  (string
+	   (string-append "Unrecoverable type error "
+			  (number->string number))))
+     (let loop ((args `(,string () #f)))
+       (if (null? args)
+	   (rtl:make-push-return label)
+	   (load-temporary-register scfg*scfg->scfg!
+				    (rtl:make-constant (car args))
+	     (lambda (temporary)
+	       (scfg*scfg->scfg! (loop (cdr args))
+				 (rtl:make-push temporary)))))))
    (rtl:make-invocation:primitive 2 #f compiled-error-procedure)))
 
 (define (open-code:type-check expression type primitive block)

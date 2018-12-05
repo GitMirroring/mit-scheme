@@ -441,3 +441,84 @@ USA.
       (begin
 	(assert (virtual-continuation? cont))
 	(symbol 'VC. (hash-object cont)))))
+
+;;;; RTL CFG with block numbers and without linearization
+
+(define (dump-rtl-full root procedures continuations rgraphs port)
+  (define (show-expr expr)
+    (write-line expr port)
+    (pp (rtl-expr/entry-node expr) port)
+    (show-bblock (rtl-expr/entry-node expr) (rtl-expr/label expr))
+    unspecific)
+  (define (show-proc proc)
+    (write-line proc port)
+    (pp (rtl-procedure/entry-node proc) port)
+    (show-bblock (rtl-procedure/entry-node proc) (rtl-procedure/label proc))
+    unspecific)
+  (define (show-cont cont)
+    (write-line cont port)
+    (pp (rtl-continuation/entry-node cont) port)
+    (show-bblock (rtl-continuation/entry-node cont)
+		 (rtl-continuation/label cont))
+    unspecific)
+  (define (show-rgraph rgraph)
+    (let ((bblocks (rgraph-bblocks rgraph)))
+      (if bblocks
+          (begin
+            (for-each (lambda (bblock)
+                        (show-bblock bblock #f)
+                        unspecific)
+                      bblocks)
+            unspecific))))
+  (define (show-bblock bblock label)
+    (if (not (node-marked? bblock))
+	(begin
+	  (node-mark! bblock)
+	  (newline port)
+	  (pp bblock port)
+	  (if label
+	      (pp (rtl:make-label-statement label) port))
+	  (for-each (lambda (edge)
+		      (let ((predecessor (edge-left-node edge)))
+			(if predecessor
+			    (pp `(from ,predecessor) port))))
+		    (node-previous-edges bblock))
+	  (bblock-walk-forward bblock
+	    (lambda (rinst)
+	      (pp (rinst-rtl rinst) port)))
+	  (if (snode? bblock)
+	      (let ((next (snode-next bblock)))
+		(if next
+		    (begin
+		      (pp `(goto ,(snode-next bblock)) port)
+		      (show-bblock (snode-next bblock) #f))
+		    (pp '(not-reached) port)))
+	      (begin
+		(pp `(jump-if-true ,(pnode-consequent bblock)) port)
+		(pp `(jump-if-false ,(pnode-alternative bblock)) port)
+		(show-bblock (pnode-consequent bblock) #f)
+		(show-bblock (pnode-alternative bblock) #f))))))
+  (parameterize ((param:printer-radix #x10)
+		 (param:print-uninterned-symbols-by-name? #t)
+		 (param:pp-primitives-by-name? #f))
+    (with-new-node-marks
+      (lambda ()
+	(pp `(root ,root) port)
+	(cond ((rtl-expr? root) (show-expr root))
+	      ((rtl-procedure? root) (show-proc root))
+	      (else (error "Invalid root:" root)))
+	(for-each (lambda (proc)
+		    (if (not (eq? proc root))
+			(begin
+			  (newline port)
+			  (show-proc proc)
+                          unspecific)))
+                  procedures)
+	(for-each (lambda (cont)
+		    (newline port)
+		    (show-cont cont)
+                    unspecific)
+                  continuations)
+	(newline port)
+	(pp `(unreachable bblocks) port)
+	(for-each show-rgraph rgraphs)))))

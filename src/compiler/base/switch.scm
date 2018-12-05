@@ -45,6 +45,7 @@ USA.
 (define compiler:optimize-environments? #t)
 (define compiler:analyze-side-effects? #t)
 (define compiler:cse? #t)
+(define compiler:dce? #t)
 (define compiler:open-code-primitives? #t)
 (define compiler:generate-rtl-files? #f)
 (define compiler:generate-lap-files? #f)

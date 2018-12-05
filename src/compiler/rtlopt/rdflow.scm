@@ -29,6 +29,15 @@ USA.
 
 (declare (usual-integrations))
 
+;(define rdflow:trace? #t)
+(define-integrable rdflow:trace? #f)
+
+(define-integrable (rdflow-trace x)
+  (if rdflow:trace?
+      (parameterize ((param:printer-radix #x10))
+	(write-line x))
+      (begin x unspecific)))
+
 (define (rtl-dataflow-analysis rgraphs)
   (for-each (lambda (rgraph)
 	      (let ((rnodes (generate-dataflow-graph rgraph)))
@@ -38,7 +47,8 @@ USA.
 			       (and rnode
 				    (rnode/value-class rnode)))
 			     rnodes))
-		(generate-known-values! rnodes)
+		(fluid-let ((*current-rgraph* rgraph))
+		  (generate-known-values! rnodes))
 		(set-rgraph-register-known-values!
 		 rgraph
 		 (vector-map (lambda (rnode)
@@ -90,13 +100,18 @@ USA.
 		  (lambda (rinst)
 		    (walk-rtl rnodes (rinst-rtl rinst)))))
 	      (rgraph-bblocks rgraph))
+    (rdflow-trace `(rgraph ,(hash-object rgraph)))
     (for-each-rnode rnodes
       (lambda (rnode)
 	(set-rnode/values!
 	 rnode
 	 (rtx-set/union* (rnode/initial-values rnode)
 			 (map rnode/initial-values
-			      (rnode/backward-links rnode))))))
+			      (rnode/backward-links rnode))))
+        (rdflow-trace
+	 `(register ,(rnode/register rnode)
+		    ,(if (> (length (rnode/values rnode)) 1) '∈ '=)
+		    ,@(rnode/values rnode)))))
     rnodes))
 
 (define (for-each-rnode rnodes procedure)
@@ -162,6 +177,8 @@ USA.
   (for-each-rnode rnodes
     (lambda (rnode)
       (let ((expression (initial-known-value (rnode/classified-values rnode))))
+	(rdflow-trace
+	 `(initial-known-value ,(rnode/register rnode) ,expression))
 	(set-rnode/known-value! rnode expression)
 	(if (not (memq expression '(UNDETERMINED #F)))
 	    (set-rnode/classified-values! rnode '())))))
@@ -174,11 +191,16 @@ USA.
 		     (values-substitution-step
 		      rnodes
 		      (rnode/classified-values rnode))))
+		(if (not (equal? values (rnode/classified-values rnode)))
+		    (rdflow-trace
+		     `(substitution ,(rnode/classified-values rnode)
+				    => ,values)))
 		(if (any (lambda (value)
 			   (eq? (car value) 'SUBSTITUTABLE-REGISTERS))
 			 values)
 		    (set-rnode/classified-values! rnode values)
 		    (let ((expression (values-unique-expression values)))
+		      (rdflow-trace `(unique ,expression))
 		      (if expression (set! new-constant? true))
 		      (set-rnode/known-value! rnode expression)
 		      (set-rnode/classified-values! rnode '())))))))
@@ -229,10 +251,21 @@ USA.
 			(if (rtl:register? expression)
 			    (let ((value
 				   (register-known-value rnodes expression)))
+			      (rdflow-trace `(no-substitution ,expression))
 			      (if value
 				  (begin (set! substitution? true) value)
 				  expression))
-			    (rtl:map-subexpressions expression loop)))))
+			    (let* ((expression*
+				    (rtl:map-subexpressions expression loop))
+				   (expression**
+				    (optimize-expression rnodes expression*)))
+			      (if (not (equal? expression** expression))
+				  (begin
+				    (set! substitution? #t)
+				    (rdflow-trace
+				     `(optimized ,expression
+						 => ,expression**))))
+			      expression**)))))
 		 (if substitution?
 		     (expression->classified-value expression)
 		     value)))
@@ -245,3 +278,95 @@ USA.
 	 (let ((value (rnode/known-value rnode)))
 	   (and (not (eq? value 'UNDETERMINED))
 		value)))))
+
+;;; XXX Logic duplicated in rinvex.scm.  Deduplicate me!
+
+(define (optimize-expression rnodes expression)
+  (let loop
+      ((identities
+	(filter (let ((type (rtl:expression-type expression)))
+		  (lambda (identity)
+		    (eq? type (car (cadr identity)))))
+		identities)))
+    (cond ((null? identities)
+	   expression)
+	  ((let ((identity (car identities)))
+	     (let ((in-domain? (car identity))
+		   (matching-operation (cadr identity)))
+	       (let loop
+		   ((operations (cddr identity))
+		    (subexpression ((cadr matching-operation) expression)))
+		 (if (null? operations)
+		     (and (valid-subexpression? subexpression)
+			  (in-domain?
+			   (rtl:expression-value-class subexpression))
+			  subexpression)
+		     (let ((subexpression
+			    (canonicalize-subexpression rnodes subexpression)))
+		       (and (eq? (caar operations)
+				 (rtl:expression-type subexpression))
+			    (loop (cdr operations)
+				  ((cadar operations) subexpression))))))))
+	   => (lambda (expression*)
+		(optimize-expression rnodes expression*)))
+	  (else
+	   (loop (cdr identities))))))
+
+(define (rtl:float->object-type expression)
+  expression
+  (rtl:make-machine-constant (ucode-type flonum)))
+
+(define identities
+  ;; Each entry is composed of a value class and a sequence of
+  ;; operations whose composition is the identity for that value
+  ;; class.  Each operation is described by the operator and the
+  ;; selector for the relevant operand.
+  `((,value-class=value? (OBJECT->FIXNUM ,rtl:object->fixnum-expression)
+			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
+    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
+			 (OBJECT->FIXNUM ,rtl:object->fixnum-expression))
+    (,value-class=value? (OBJECT->UNSIGNED-FIXNUM
+			  ,rtl:object->unsigned-fixnum-expression)
+			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
+    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
+			 (OBJECT->UNSIGNED-FIXNUM
+			  ,rtl:object->unsigned-fixnum-expression))
+    (,value-class=value? (FIXNUM->ADDRESS ,rtl:fixnum->address-expression)
+			 (ADDRESS->FIXNUM ,rtl:address->fixnum-expression))
+    (,value-class=value? (ADDRESS->FIXNUM ,rtl:address->fixnum-expression)
+			 (FIXNUM->ADDRESS ,rtl:fixnum->address-expression))
+    (,value-class=value? (OBJECT->FLOAT ,rtl:object->float-expression)
+			 (FLOAT->OBJECT ,rtl:float->object-expression))
+    (,value-class=value? (FLOAT->OBJECT ,rtl:float->object-expression)
+			 (OBJECT->FLOAT ,rtl:object->float-expression))
+    (,value-class=address? (OBJECT->ADDRESS ,rtl:object->address-expression)
+			   (CONS-POINTER ,rtl:cons-pointer-datum))
+    ;; The following are not value-class=datum? and value-class=type?
+    ;; because they are slightly more general.
+    (,value-class=immediate? (OBJECT->DATUM ,rtl:object->datum-expression)
+			     (CONS-NON-POINTER ,rtl:cons-non-pointer-datum))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (CONS-POINTER ,rtl:cons-pointer-type))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (CONS-NON-POINTER ,rtl:cons-non-pointer-type))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (FLOAT->OBJECT ,rtl:float->object-type))))
+
+(define (valid-subexpression? expression)
+  ;; Machine registers not allowed because they are volatile.
+  ;; Ideally at this point we could introduce a copy to the
+  ;; value of the machine register required, but it is too late
+  ;; to do this.  Perhaps always copying machine registers out
+  ;; before using them would make this win.
+  (or (not (rtl:register? expression))
+      (rtl:pseudo-register-expression? expression)))
+
+(define (canonicalize-subexpression rnodes expression)
+  (or (and (rtl:pseudo-register-expression? expression)
+	   (or (register-known-value rnodes expression)
+	       (let* ((number (rtl:register-number expression))
+		      (rnode (vector-ref rnodes number)))
+		 (and rnode
+		      (values-unique-expression
+		       (rnode/classified-values rnode))))))
+      expression))

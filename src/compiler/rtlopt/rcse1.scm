@@ -88,6 +88,22 @@ USA.
 		   *stack-reference-quantities*)))
 
 (define (walk-bblock bblock)
+  ;; Simulate assignments arising from equality tests.
+  (for-each
+   (lambda (predicate)
+     (define (equate! register expression)
+       (expression-replace!
+        (lambda (stmt) stmt expression)
+        (lambda (stmt expression*) stmt expression* unspecific)
+        #f
+        (lambda (volatile? insert-source!)
+          (cse/assign/register register expression volatile? insert-source!))))
+     (if (rtl:eq-test? predicate)
+         (let ((exp1 (rtl:eq-test-expression-1 predicate))
+               (exp2 (rtl:eq-test-expression-2 predicate)))
+           (cond ((rtl:register? exp1) (equate! exp1 exp2))
+                 ((rtl:register? exp2) (equate! exp2 exp1))))))
+   (cfg-node-get bblock 'cfa-entry-truths))
   (let loop ((rinst (bblock-instructions bblock)))
     (let ((rtl (rinst-rtl rinst)))
       ((if (eq? (rtl:expression-type rtl) 'ASSIGN)

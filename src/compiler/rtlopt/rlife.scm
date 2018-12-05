@@ -30,7 +30,8 @@ USA.
 (declare (usual-integrations))
 
 (define (lifetime-analysis rgraphs)
-  (for-each walk-rgraph rgraphs))
+  (for-each walk-rgraph rgraphs)
+  unspecific)
 
 (define (walk-rgraph rgraph)
   (let ((n-registers (rgraph-n-registers rgraph))
@@ -45,13 +46,15 @@ USA.
 		(set-bblock-live-at-entry! bblock (make-regset n-registers))
 		(set-bblock-live-at-exit! bblock (make-regset n-registers))
 		(set-bblock-new-live-at-exit! bblock
-					      (make-regset n-registers)))
+					      (make-regset n-registers))
+		unspecific)
 	      bblocks)
     (fluid-let ((*current-rgraph* rgraph))
       (walk-bblocks bblocks))
     (for-each (lambda (bblock)
 		(set-bblock-new-live-at-exit! bblock false))
-	      (rgraph-bblocks rgraph))))
+	      (rgraph-bblocks rgraph))
+    unspecific))
 
 (define (walk-bblocks bblocks)
   (let ((changed? false))
@@ -70,16 +73,21 @@ USA.
 			       (lambda (bblock*)
 				 (regset-union!
 				  (bblock-new-live-at-exit bblock*)
-				  (bblock-live-at-entry bblock)))))))
+				  (bblock-live-at-entry bblock))
+				 unspecific))))
+		  unspecific)
 		bblocks)
       (if changed?
 	  (begin (set! changed? false)
 		 (loop false))
-	  (for-each (lambda (bblock)
-		      (regset-copy! (bblock-live-at-entry bblock)
-				    (bblock-live-at-exit bblock))
-		      (propagate-block&delete! bblock))
-		    bblocks)))
+	  (begin
+	    (for-each (lambda (bblock)
+			(regset-copy! (bblock-live-at-entry bblock)
+				      (bblock-live-at-exit bblock))
+			(propagate-block&delete! bblock)
+			unspecific)
+		      bblocks)
+	    unspecific)))
     (loop true)))
 
 (define (propagate-block bblock)
@@ -89,12 +97,14 @@ USA.
 			      dead
 			      live
 			      (rinst-rtl rinst)
-			      false false))))
+			      false false)
+      unspecific)))
 
 (define (propagate-block&delete! bblock)
   (for-each-regset-member (bblock-live-at-entry bblock)
     (lambda (register)
-      (set-register-bblock! register 'NON-LOCAL)))
+      (set-register-bblock! register 'NON-LOCAL)
+      unspecific))
   (propagation-loop bblock
     (lambda (dead live rinst)
       (let ((rtl (rinst-rtl rinst))
@@ -105,8 +115,10 @@ USA.
 	    (set-rinst-rtl! rinst false)
 	    (begin
 	      (update-live-registers! old dead live rtl bblock rinst)
-	      (for-each-regset-member old increment-register-live-length!))))))
-  (bblock-perform-deletions! bblock))
+	      (for-each-regset-member old increment-register-live-length!))))
+      unspecific))
+  (bblock-perform-deletions! bblock)
+  unspecific)
 
 (define (propagation-loop bblock procedure)
   (let ((dead (regset-allocate (rgraph-n-registers *current-rgraph*)))

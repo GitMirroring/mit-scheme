@@ -25,15 +25,29 @@ USA.
 |#
 
 ;;;; RTL dead code elimination
+;;; package: (compiler rtl-optimizer dead-code-elimination)
+
+;;; Dead code elimination happens in three parts:
+;;;
+;;; - identifying statements that are proved true or false on entry to each
+;;;   bblock (called control flow analysis here, and implemented in,
+;;;   rtlcfa.scm);
+;;;
+;;; - pruning branches that can be statically determined (dead branch
+;;;   elimination here); and
+;;;
+;;; - pruning blocks that are unreachable after pruning branches (a kind of
+;;;   garbage collection, called dead block elimination here).
 
 (declare (usual-integrations))
 
-;(define dce:trace? #t)
-(define-integrable dce:trace? #f)
+;(define dce:trace-level 3)
+(define-integrable dce:trace-level 0)
 
-(define-integrable (dce-trace obj)
-  (if dce:trace?
-      (pp obj)))
+(define-integrable (dce-trace level obj)
+  (if (>= dce:trace-level level)
+      (parameterize ((param:printer-radix #x10))
+	(pp obj))))
 
 ;;; (DEAD-BRANCH-ELIMINATION <rgraphs>)
 ;;;
@@ -41,15 +55,20 @@ USA.
 ;;;	that connect to the known successor.
 
 (define (dead-branch-elimination rgraphs)
-  (and (any (lambda (rgraph)
-	      (fluid-let ((*current-rgraph* rgraph))
-		(and (any (lambda (bblock)
-			    (and (pnode? bblock)
-				 (prune-branch-if-dead! bblock rgraph)))
-			  (rgraph-bblocks rgraph))
-		     #t)))
-	    rgraphs)
-       #t))
+  (dce-trace 1 '(dead-branch-elimination))
+  (let ((pruned? #f))
+    (for-each (lambda (rgraph)
+		(fluid-let ((*current-rgraph* rgraph))
+		  (for-each (lambda (bblock)
+			      (if (and (pnode? bblock)
+				       (prune-branch-if-dead! bblock rgraph))
+				  (set! pruned? #t)))
+			    (rgraph-bblocks rgraph))
+		  (if pruned?
+		      (dce-trace 1 `(pruned rgraph ,(hash-object rgraph))))
+		  unspecific))
+	      rgraphs)
+    pruned?))
 
 ;;; (DEAD-BLOCK-ELIMINATION <rgraphs> <root> <procedures> <continuations>)
 ;;;
@@ -63,6 +82,7 @@ USA.
 ;;;	<Root> may be an RTL procedure or an RTL expression.
 
 (define (dead-block-elimination rgraphs root procedures continuations)
+  (dce-trace 1 '(dead-block-elimination))
   (with-new-node-marks
     (lambda ()
       (trace-reachable-bblocks!
@@ -84,11 +104,10 @@ USA.
   (assert (pblock? bblock))
   ;; See whether we can statically decide which way the branch goes.
   (let* ((rtl (rinst-rtl (rinst-last (bblock-instructions bblock))))
-	 (decision
-	  ((lookup-pruning-method (rtl:expression-type rtl)) rtl bblock)))
+	 (decision (evaluate-decision rtl bblock)))
     (case decision
       ((#f #t)
-       (dce-trace `(prune branch ,bblock ,rtl => ,decision))
+       (dce-trace 2 `(determine branch ,bblock ,rtl => ,decision))
        ;; We can decide.  Get the edges, and pick which one is live and
        ;; which one is dead.
        (let ((consequent-edge (pnode-consequent-edge bblock))
@@ -120,7 +139,7 @@ USA.
 			     (set-rinst-next! rinst #f))))
 		     ;; Create a replacement sblock.
 		     (let ((bblock* (make-sblock rinst)))
-		       (dce-trace `(add ,bblock* replacing ,bblock))
+		       (dce-trace 3 `(add ,bblock* replacing ,bblock))
 		       (add-rgraph-bblock! rgraph bblock*)
 		       ;; Set the predecessors to point at
 		       ;; bblock* instead.
@@ -134,7 +153,7 @@ USA.
 		       (create-edge! bblock* set-snode-next-edge! next)
 		       bblock*))
 		   (begin
-		     (dce-trace `(add nothing replacing ,bblock))
+		     (dce-trace 3 `(add nothing replacing ,bblock))
 		     ;; Set the predecessors to point at next instead.
 		     (node-replace-on-right! bblock next)
 		     ;; Disconnect bblock's edges to its live and dead
@@ -143,14 +162,26 @@ USA.
 		     (edge-disconnect-right! dead-edge)
 		     next))))))
        ;; This bblock is no longer wired, so delete it from the rgraph.
-       (dce-trace `(delete ,bblock))
+       (dce-trace 3 `(delete ,bblock))
        (delete-rgraph-bblock! rgraph bblock)
        #t)
       ((BOTH)
+       (dce-trace 3 `(both live ,bblock ,rtl ,(canonicalize-rtl-predicate rtl)))
        ;; Both edges are potentially still live.  Tough.
        #f)
       (else (error "Invalid pruning decision:" decision)))))
 
+(define (evaluate-decision rtl bblock)
+  (let ((rtl* (canonicalize-rtl-predicate rtl)))
+    (cond ((rtp-set/member? rtl* (bblock-entry-truths bblock))
+	   (dce-trace 2 `(cfa proved ,rtl true in ,bblock))
+	   #t)
+	  ((rtp-set/member? rtl* (bblock-entry-falsehoods bblock))
+	   (dce-trace 2 `(cfa proved ,rtl false in ,bblock))
+	   #f)
+	  (else
+	   ((lookup-pruning-method (rtl:expression-type rtl*)) rtl* bblock)))))
+
 (define pruning-methods
   '())
 
@@ -180,7 +211,9 @@ USA.
       (if (rtl:machine-constant? expression)
 	  (= (rtl:machine-constant-value expression)
 	     (rtl:type-test-type stmt))
-	  'BOTH))))
+	  (begin
+	    (dce-trace 2 `(fail ,stmt ,bblock))
+	    'BOTH)))))
 
 (define-pruning-method 'PRED-1-ARG
   (lambda (stmt bblock)
@@ -408,11 +441,12 @@ USA.
 		  (if edge
 		      (begin
 			(dce-trace
+			 3
 			 `(disconnect ,bblock => ,(edge-right-node edge)))
 			(edge-disconnect-right! edge))))
 		(if (not (node-marked? bblock))
 		    (begin
-		      (dce-trace `(prune block ,bblock))
+		      (dce-trace 2 `(prune block ,bblock))
 		      (set! deletions (cons bblock deletions))
 		      (if (snode? bblock)
 			  (disconnect! (snode-next-edge bblock))
@@ -441,7 +475,7 @@ USA.
    rgraph
    (filter (lambda (edge)
 	     (if (not (node-marked? (edge-right-node edge)))
-		 (dce-trace `(prune entry ,(edge-right-node edge))))
+		 (dce-trace 3 `(prune entry ,(edge-right-node edge))))
 	     (node-marked? (edge-right-node edge)))
 	   (rgraph-entry-edges rgraph))))
 
@@ -453,7 +487,7 @@ USA.
 (define (prune-unreachable-procedures procedures)
   (filter (lambda (procedure)
 	    (if (not (node-marked? (rtl-procedure/entry-node procedure)))
-		(dce-trace `(prune procedure ,procedure)))
+		(dce-trace 2 `(prune procedure ,procedure)))
 	    (node-marked? (rtl-procedure/entry-node procedure)))
 	  procedures))
 
@@ -465,6 +499,6 @@ USA.
 (define (prune-unreachable-continuations continuations)
   (filter (lambda (continuation)
 	    (if (not (node-marked? (rtl-continuation/entry-node continuation)))
-		(dce-trace `(prune continuation ,continuation)))
+		(dce-trace 2 `(prune continuation ,continuation)))
 	    (node-marked? (rtl-continuation/entry-node continuation)))
 	  continuations))
