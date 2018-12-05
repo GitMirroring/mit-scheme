@@ -38,6 +38,8 @@ USA.
 
 (define scheme-datum-width "DATUM_LENGTH")
 
+(define-integrable prefer-backward-branches? #f)
+
 ;;; It is currently required that both packed characters and objects
 ;;; be integrable numbers of address units.  Furthermore, the number
 ;;; of address units per object must be an integral multiple of the

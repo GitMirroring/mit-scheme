@@ -36,6 +36,7 @@ USA.
 (define-integrable addressing-granularity 8)
 (define-integrable scheme-object-width 64)
 (define-integrable scheme-type-width 6)	;or 8
+(define-integrable prefer-backward-branches? #t)
 
 ;; NOTE: expt is not being constant-folded now.
 ;; For the time being, some of the parameters below are

@@ -75,16 +75,25 @@ USA.
   (define (linearize-pblock pblock cn an)
     (if (node-marked? cn)
 	(if (node-marked? an)
-	    (heed-preference pblock cn an
+	    (backward-preference pblock cn an
 	      (lambda (generator cn an)
-		(LAP ,@(generator (bblock-label cn))
+		(LAP ,@(lap:comment '(BOTH BACKWARD))
+		     ,@(generator (bblock-label cn))
 		     ,@(lap:make-unconditional-branch (bblock-label an)))))
-	    (LAP ,@((pblock-consequent-lap-generator pblock)
-		    (bblock-label cn))
+	    (LAP ,@(backward-or-fallthrough
+		    pblock
+		    'CONSEQUENT
+		    (bblock-label cn)
+		    (pblock-consequent-lap-generator pblock)
+		    (pblock-alternative-lap-generator pblock))
 		 ,@(linearize-bblock an)))
 	(if (node-marked? an)
-	    (LAP ,@((pblock-alternative-lap-generator pblock)
-		    (bblock-label an))
+	    (LAP ,@(backward-or-fallthrough
+		    pblock
+		    'ALTERNATIVE
+		    (bblock-label an)
+		    (pblock-alternative-lap-generator pblock)
+		    (pblock-consequent-lap-generator pblock))
 		 ,@(linearize-bblock cn))
 	    (linearize-pblock-1 pblock cn an))))
 
@@ -93,29 +102,35 @@ USA.
 	   (lambda (generator cn an)
 	     (let ((clabel (bblock-label! cn))
 		   (alternative (linearize-bblock an)))
-	       (LAP ,@(generator clabel)
+	       (LAP ,@(lap:comment '(FORWARD OR FALLTHROUGH))
+		    ,@(generator clabel)
 		    ,@alternative
 		    ,@(if (node-marked? cn)
 			  (LAP)
 			  (linearize-bblock cn)))))))
       (let ((consequent-first
 	     (lambda ()
-	       (finish (pblock-alternative-lap-generator pblock) an cn)))
+	       (LAP ,@(lap:comment '(CONSEQUENT FIRST))
+		    ,@(finish
+		       (pblock-alternative-lap-generator pblock) an cn))))
 	    (alternative-first
 	     (lambda ()
-	       (finish (pblock-consequent-lap-generator pblock) cn an)))
+	       (LAP ,@(lap:comment '(ALTERNATIVE FIRST))
+		    ,@(finish
+		       (pblock-consequent-lap-generator pblock) cn an))))
 	    (unspecial
 	     (lambda ()
-	       (heed-preference pblock cn an finish)))
+	       (forward-preference pblock cn an finish)))
 	    (diamond
 	     (lambda ()
 	       (let ((jlabel (generate-label)))
-		 (heed-preference pblock cn an
+		 (forward-preference pblock cn an
 		   (lambda (generator cn an)
 		     (let ((clabel (bblock-label! cn)))
 		       (let ((consequent (linearize-bblock-1 cn))
 			     (alternative (linearize-bblock-1 an)))
-			 (LAP ,@(generator clabel)
+			 (LAP ,@(lap:comment '(DIAMOND))
+			      ,@(generator clabel)
 			      ,@alternative
 			      ,@(lap:make-unconditional-branch jlabel)
 			      ,@consequent
@@ -160,10 +175,86 @@ USA.
 	      (else
 	       (unspecial))))))
 
-  (define (heed-preference pblock cn an finish)
+  ;; We are going to either branch to a preceding label, or continue
+  ;; forward.  If backward branches are statically predicted not taken,
+  ;; as on modern x86 and arm CPUs (2018) and probably others, then use
+  ;; a backward branch if we predict it will be taken or have no
+  ;; prediction, and use a forward branch if we predict it will be not
+  ;; taken.  If, on the other hand, merely taking a branch is costly,
+  ;; as in the SVM back end, or if we are deferring to a C compiler,
+  ;; then just issue a backward branch.
+  ;;
+  ;; If we ever add support for CPUs like powerpc, we should perhaps
+  ;; add a parameter to the machine-dependent branch generation to
+  ;; include branch hints in the instruction stream.
+
+  (define (backward-or-fallthrough pblock sense label backward forward)
+    (LAP ,@(lap:comment '(BACKWARD OR FALLTHROUGH))
+	 ,@(let ((preference (pnode/preferred-branch pblock)))
+	     (if (or (not prefer-backward-branches?)
+		     (not preference)
+		     (eq? preference sense))
+		 (LAP ,@(if (eq? preference sense)
+			    (lap:comment '(PREDICT TAKEN BACKWARD))
+			    (lap:comment '(UNPREDICTED)))
+		      ,@(backward label))
+		 (LAP ,@(lap:comment '(PREDICT NOT TAKEN BACKWARD VIA FORWARD))
+		      ,@(backward-via-forward label forward))))))
+
+  (define (backward-via-forward label forward)
+    (let* ((label0 (generate-label))
+	   (label1 (generate-label))
+	   (label2 (generate-label)))
+      (LAP ,@(lap:make-unconditional-branch label1)
+	   (LABEL ,label0)
+	   ,@(lap:make-unconditional-branch label2)
+	   (LABEL ,label1)
+	   ,@(forward label0)
+	   ,@(lap:make-unconditional-branch label)
+	   (LABEL ,label2))))
+
+  ;; We are going to make a backward branch to one or the other of two
+  ;; blocks.  Pick one to branch to as the `consequent' and provide its
+  ;; generator, and one to fall through to as the alternative, so that
+  ;; the preferred branch uses the cheaper path.
+
+  (define (backward-preference pblock cn an finish)
+    (if prefer-backward-branches?
+	;; If backward branches are statically predicted not taken,
+	;; supply the preferred destination as the branch.
+	(if (eq? 'CONSEQUENT (pnode/preferred-branch pblock))
+	    (LAP ,@(lap:comment '(PREDICT TAKEN BACKWARD CONSEQUENT))
+		 ,@(finish (pblock-consequent-lap-generator pblock) cn an))
+	    (LAP ,@(if (pnode/preferred-branch pblock)
+		       (lap:comment '(PREDICT TAKEN BACKWARD ALTERNATIVE))
+		       (lap:comment '(UNPREDICTED)))
+		 ,@(finish (pblock-alternative-lap-generator pblock) an cn)))
+	;; If fallthroughs are cheaper than taken branches, supply the
+	;; preferred destination as the fallthrough.
+	(if (eq? 'CONSEQUENT (pnode/preferred-branch pblock))
+	    (LAP ,@(lap:comment '(PREDICT NOT TAKEN BACKWARD ALTERNATIVE))
+		 ,@(finish (pblock-alternative-lap-generator pblock) an cn))
+	    (LAP ,@(if (pnode/preferred-branch pblock)
+		       (lap:comment '(PREDICT NOT TAKEN BACKWARD CONSEQUENT))
+		       (lap:comment '(UNPREDICTED)))
+		 ,@(finish (pblock-consequent-lap-generator pblock) cn an)))))
+
+  ;; We are going to make a forward branch to one or the other of two
+  ;; blocks.  Pick one to branch to as the `consequent' and provide its
+  ;; generator, and one to fall through to as the alternative, so that
+  ;; the preferred branch uses the cheaper path.
+
+  (define (forward-preference pblock cn an finish)
+    ;; Whether forward branches are statically predicted not-taken, or
+    ;; whether taken branches are costlier than fallthroughs, supply
+    ;; the preferred destination as the fallthrough.
     (if (eq? 'CONSEQUENT (pnode/preferred-branch pblock))
-	(finish (pblock-alternative-lap-generator pblock) an cn)
-	(finish (pblock-consequent-lap-generator pblock) cn an)))
+	(LAP ,@(lap:comment '(PREDICT NOT TAKEN FORWARD ALTERNATIVE))
+	     ,@(finish (pblock-alternative-lap-generator pblock) an cn))
+	(LAP ,@(if (pnode/preferred-branch pblock)
+		   (lap:comment '(PREDICT NOT TAKEN FORWARD CONSEQUENT))
+		   (lap:comment '(UNPREDICTED)))
+	     ,@(finish (pblock-consequent-lap-generator pblock) cn an))))
 
   (define (find-next bblock)
     (let loop ((bblock bblock) (previous false))

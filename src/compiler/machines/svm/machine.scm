@@ -37,6 +37,7 @@ USA.
 (define-integrable scheme-type-width 6)
 (define-integrable scheme-type-limit #x40)
 (define-integrable scheme-object-width (if (fix:fixnum? #x100000000) 64 32))
+(define-integrable prefer-backward-branches? #f)
 
 (define-integrable scheme-datum-width
   (- scheme-object-width scheme-type-width))
