@@ -39,7 +39,8 @@ USA.
   ;; the hash table, returning the element.  Do not call the thunk if
   ;; the expression is volatile.
   (let ((expression
-	 (expression-canonicalize (statement-expression statement))))
+	 (expression-canonicalize
+	  (expression-reduce (statement-expression statement)))))
     (full-expression-hash expression
       (lambda (hash volatile? in-memory?)
 	(let ((element
@@ -84,6 +85,199 @@ USA.
 	       expression)))
 	(else
 	 (rtl:map-subexpressions expression expression-canonicalize))))
+
+;;;; Invertible expression elimination
+
+;;; (EXPRESSION-REDUCE <expression>)
+;;;
+;;;	For each subexpression of <expression>, and for each equivalent
+;;;	of that subexpression according to CSE, try substituting that
+;;;	equivalent for that subexpression and reducing the whole
+;;;	expression.  If it can be reduced, return the lowest-cost
+;;;	expression that <expression> can be reduced to; otherwise just
+;;;	return <expression>.
+;;;
+;;;	There should be no need to iterate this process, because every
+;;;	expression is reduced like this as we go along, so each element
+;;;	should always have a minimal expression to which no further
+;;;	reductions apply.
+;;;
+;;;	XXX At merge blocks, consider applying this to every possible
+;;;	expansion in _each_ predecessor, and taking the intersection of
+;;;	the possible reductions.  That way, in (flo:+ x (if y (flo:* a
+;;;	b) (flo:/ a b))), we could eliminate the type check, because
+;;;	(object->type (float->object 123)) = (object->type
+;;;	(float->object 456)) = (machine-constant (ucode-type flonum)).
+;;;	For now, we'll just live with having to distribute it as (if y
+;;;	(flo:+ x (flo:* a b)) (flo:+ x (flo:/ a b))) if we want to
+;;;	avoid the type check.  This would not, unfortunately, eliminate
+;;;	the intermediate float->object, because (object->float
+;;;	(float->object 123)) is not, in general, equal to
+;;;	(object->float (float->object 456)).  Addressing that would
+;;;	require merging a common suffix of the predecessors in the
+;;;	merge block, which would also address the type check.
+
+(define (expression-reduce expression)
+  (let loop
+      ((substituticators (rtl:subexpression-substituticators expression))
+       (candidates '()))
+    (if (pair? substituticators)
+	((car substituticators)
+	 (lambda (subexpression substitute)
+	   (define (consider subexpression* candidates)
+	     (let* ((expression* (substitute subexpression*))
+		    (expression** (expression-reduce-1 expression*)))
+	       ;; If, after substitution, nothing changed, or we
+	       ;; already had whatever reduction gave us, don't
+	       ;; consider this as a new candidate.
+	       (if (or (equal? expression** expression*)
+		       (assoc expression** candidates))
+		   candidates
+		   (cons (list expression**
+			       (rtl:expression-cost expression**))
+			 candidates))))
+	   (let* ((hash (expression-hash subexpression))
+		  (class (rcse-ht-lookup hash subexpression)))
+	     (let subloop
+		 ((element (and class (element-first-value class)))
+		  (candidates candidates))
+	       (if (element? element)
+		   (subloop (element-next-value element)
+			    (consider (element-expression element)
+				      candidates))
+		   (loop (cdr substituticators) candidates))))))
+	(if (pair? candidates)
+	    (caar (sort candidates (lambda (a b) (< (cadr a) (cadr b)))))
+	    expression))))
+
+;;; (RTL:SUBEXPRESSION-SUBSTITUTICATORS <expression>)
+;;;
+;;;	Return a list of substituticators for the subexpressions of
+;;;	<expression>.  A substituticator is a function that works like
+;;;
+;;;		(<substituticator>
+;;;		 (LAMBDA (SUBEXPRESSION SUBSTITUTE)
+;;;		   ... (SUBSTITUTE SUBEXPRESSION*) ...))
+;;;
+;;;	where SUBEXPRESSION one of the subexpressions of <expression>,
+;;;	and (SUBSTITUTE* <subexpression*>) returns an expression that
+;;;	is like <expression> but with <subexpression*> substituted for
+;;;	that subexpression.
+;;;
+;;;	XXX Move this to rtlbase.
+
+(define (rtl:subexpression-substituticators expression)
+  (if (or (rtl:register? expression)
+	  (rtl:contains-no-substitutable-registers? expression))
+      '()
+      (let ((type (car expression))
+	    (subexpressions (cdr expression)))
+	(let loop
+	    ((subexpressions subexpressions)
+	     (reverse-prefix (list type)))
+	  (if (pair? subexpressions)
+	      (let ((subexpression (car subexpressions))
+		    (subexpressions (cdr subexpressions)))
+		(let ((substituticators
+		       (loop subexpressions
+			     (cons subexpression reverse-prefix))))
+		  (if (pair? subexpression)
+		      (cons (lambda (f)
+			      (f subexpression
+				 (lambda (subexpression*)
+				   (append-reverse reverse-prefix
+						   (cons subexpression*
+							 subexpressions)))))
+			    substituticators)
+		      substituticators)))
+	      '())))))
+
+;;; (EXPRESSION-REDUCE-1 <expression>)
+;;;
+;;;	Try to reduce <expression> by a known identity, and return
+;;;	<expression> or a reduced expression that is equivalent to it.
+;;;
+;;;	The algorithm here is a little silly, and is so because it was
+;;;	copied nearly verbatim from the old RTL invertible expression
+;;;	elimination in rinvex.scm, which was a standalone pass outside
+;;;	of CSE.
+
+(define (expression-reduce-1 expression)
+  (let loop
+      ((identities
+	(filter (let ((type (rtl:expression-type expression)))
+		  (lambda (identity)
+		    (eq? type (car (cadr identity)))))
+		identities)))
+    (cond ((null? identities)
+	   expression)
+	  ((let ((identity (car identities)))
+	     (let ((in-domain? (car identity))
+		   (matching-operation (cadr identity)))
+	       (let loop
+		   ((operations (cddr identity))
+		    (subexpression ((cadr matching-operation) expression)))
+		 (if (null? operations)
+		     (and (valid-subexpression? subexpression)
+			  (in-domain?
+			   (rtl:expression-value-class subexpression))
+			  subexpression)
+		     (and (eq? (caar operations)
+			       (rtl:expression-type subexpression))
+			  (loop (cdr operations)
+				((cadar operations) subexpression)))))))
+	   => expression-reduce-1)
+	  (else
+	   (loop (cdr identities))))))
+
+(define (rtl:float->object-type expression)
+  expression
+  (rtl:make-machine-constant (ucode-type flonum)))
+
+(define identities
+  ;; Each entry is composed of a value class and a sequence of
+  ;; operations whose composition is the identity for that value
+  ;; class.  Each operation is described by the operator and the
+  ;; selector for the relevant operand.
+  `((,value-class=value? (OBJECT->FIXNUM ,rtl:object->fixnum-expression)
+			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
+    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
+			 (OBJECT->FIXNUM ,rtl:object->fixnum-expression))
+    (,value-class=value? (OBJECT->UNSIGNED-FIXNUM
+			  ,rtl:object->unsigned-fixnum-expression)
+			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
+    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
+			 (OBJECT->UNSIGNED-FIXNUM
+			  ,rtl:object->unsigned-fixnum-expression))
+    (,value-class=value? (FIXNUM->ADDRESS ,rtl:fixnum->address-expression)
+			 (ADDRESS->FIXNUM ,rtl:address->fixnum-expression))
+    (,value-class=value? (ADDRESS->FIXNUM ,rtl:address->fixnum-expression)
+			 (FIXNUM->ADDRESS ,rtl:fixnum->address-expression))
+    (,value-class=value? (OBJECT->FLOAT ,rtl:object->float-expression)
+			 (FLOAT->OBJECT ,rtl:float->object-expression))
+    (,value-class=value? (FLOAT->OBJECT ,rtl:float->object-expression)
+			 (OBJECT->FLOAT ,rtl:object->float-expression))
+    (,value-class=address? (OBJECT->ADDRESS ,rtl:object->address-expression)
+			   (CONS-POINTER ,rtl:cons-pointer-datum))
+    ;; The following are not value-class=datum? and value-class=type?
+    ;; because they are slightly more general.
+    (,value-class=immediate? (OBJECT->DATUM ,rtl:object->datum-expression)
+			     (CONS-NON-POINTER ,rtl:cons-non-pointer-datum))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (CONS-POINTER ,rtl:cons-pointer-type))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (CONS-NON-POINTER ,rtl:cons-non-pointer-type))
+    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
+			     (FLOAT->OBJECT ,rtl:float->object-type))))
+
+(define (valid-subexpression? expression)
+  ;; Machine registers not allowed because they are volatile.
+  ;; Ideally at this point we could introduce a copy to the
+  ;; value of the machine register required, but it is too late
+  ;; to do this.  Perhaps always copying machine registers out
+  ;; before using them would make this win.
+  (or (not (rtl:register? expression))
+      (rtl:pseudo-register-expression? expression)))
 
 ;;;; Hash
 
