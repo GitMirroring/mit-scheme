@@ -99,7 +99,19 @@ USA.
 	     (if (not method)
 		 (error "Missing CSE method" (rtl:expression-type rtl)))
 	     method))
-       rtl))
+       rtl)
+      ;; Simulate assignment to the known value, if it is distinct from
+      ;; the expression.  Dataflow analysis can find preciser answers
+      ;; than CSE does at the moment.
+      (if (and (rtl:assign? rtl)
+	       (rtl:register? (rtl:assign-address rtl)))
+	  (let ((register (rtl:register-number (rtl:assign-address rtl))))
+	    (if (pseudo-register? register)
+		(let ((expression (rtl:assign-expression rtl))
+		      (expression* (register-known-value register)))
+		  (if (and expression* (not (equal? expression expression*)))
+		      (cse/assign
+		       `(ASSIGN (REGISTER ,register) ,expression*))))))))
     (if (rinst-next rinst)
 	(loop (rinst-next rinst))))
   (node-mark! bblock)
