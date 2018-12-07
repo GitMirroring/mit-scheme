@@ -322,6 +322,8 @@ USA.
 		 (close-syntax 'ADD-REWRITING-RULE! environment))
 		((PRE-CSE-REWRITING)
 		 (close-syntax 'ADD-PRE-CSE-REWRITING-RULE! environment))
+		((REDUCTION)
+		 (close-syntax 'ADD-REDUCTION-RULE! environment))
 		(else
 		 (error "Unknown rule type:" (cadr form))))
 	     ',pattern

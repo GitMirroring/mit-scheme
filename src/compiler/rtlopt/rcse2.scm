@@ -118,37 +118,42 @@ USA.
 ;;;	merge block, which would also address the type check.
 
 (define (expression-reduce expression)
-  (let loop
-      ((substituticators (rtl:subexpression-substituticators expression))
-       (candidates '()))
-    (if (pair? substituticators)
-	((car substituticators)
-	 (lambda (subexpression substitute)
-	   (define (consider subexpression* candidates)
-	     (let* ((expression* (substitute subexpression*))
-		    (expression** (expression-reduce-1 expression*)))
-	       ;; If, after substitution, nothing changed, or we
-	       ;; already had whatever reduction gave us, don't
-	       ;; consider this as a new candidate.
-	       (if (or (equal? expression** expression*)
-		       (assoc expression** candidates))
-		   candidates
-		   (cons (list expression**
-			       (rtl:expression-cost expression**))
-			 candidates))))
-	   (let* ((hash (expression-hash subexpression))
-		  (class (rcse-ht-lookup hash subexpression)))
-	     (let subloop
-		 ((element (and class (element-first-value class)))
-		  (candidates candidates))
-	       (if (element? element)
-		   (subloop (element-next-value element)
-			    (consider (element-expression element)
-				      candidates))
-		   (loop (cdr substituticators) candidates))))))
-	(if (pair? candidates)
-	    (caar (sort candidates (lambda (a b) (< (cadr a) (cadr b)))))
-	    expression))))
+  (let ((matchers (reduction-matchers expression)))
+    (if (not matchers)
+	expression
+	(let loop
+	    ((substituticators (rtl:subexpression-substituticators expression))
+	     (candidates '()))
+	  (if (pair? substituticators)
+	      ((car substituticators)
+	       (lambda (subexpression substitute)
+		 (define (consider subexpression* candidates)
+		   (let* ((expression* (substitute subexpression*))
+			  (expression**
+			   (expression-reduce-1 expression* matchers)))
+		     ;; If, after substitution, nothing changed, or we
+		     ;; already had whatever reduction gave us, don't
+		     ;; consider this as a new candidate.
+		     (if (or (eq? expression** expression*)
+			     (equal? expression** expression*)
+			     (assoc expression** candidates))
+			 candidates
+			 (cons (list expression**
+				     (rtl:expression-cost expression**))
+			       candidates))))
+		 (let* ((hash (expression-hash subexpression))
+			(class (rcse-ht-lookup hash subexpression)))
+		   (let subloop
+		       ((element (and class (element-first-value class)))
+			(candidates candidates))
+		     (if (element? element)
+			 (subloop (element-next-value element)
+				  (consider (element-expression element)
+					    candidates))
+			 (loop (cdr substituticators) candidates))))))
+	      (if (pair? candidates)
+		  (caar (sort candidates (lambda (a b) (< (cadr a) (cadr b)))))
+		  expression))))))
 
 ;;; (RTL:SUBEXPRESSION-SUBSTITUTICATORS <expression>)
 ;;;
@@ -191,93 +196,92 @@ USA.
 			    substituticators)
 		      substituticators)))
 	      '())))))
+
+(define (expression-reduce-1 expression matchers)
+  (let ((reducer (pattern-lookup matchers expression)))
+    (if reducer
+	(reducer)
+	expression)))
+
+(define reduction-rules
+  (make-strong-eq-hash-table))
+
+(define (add-reduction-rule! pattern matcher)
+  (assert (pair? pattern))
+  (let ((keyword (car pattern)))
+    (assert (symbol? keyword))
+    (hash-table-update!/default reduction-rules keyword
+      (lambda (rules) (cons matcher rules))
+      '())
+    unspecific))
+
+(define (reduction-matchers expression)
+  (and (pair? expression)
+       (hash-table-ref/default reduction-rules (car expression) #f)))
 
-;;; (EXPRESSION-REDUCE-1 <expression>)
-;;;
-;;;	Try to reduce <expression> by a known identity, and return
-;;;	<expression> or a reduced expression that is equivalent to it.
-;;;
-;;;	The algorithm here is a little silly, and is so because it was
-;;;	copied nearly verbatim from the old RTL invertible expression
-;;;	elimination in rinvex.scm, which was a standalone pass outside
-;;;	of CSE.
+(define-rule reduction (OBJECT->FIXNUM (FIXNUM->OBJECT (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
 
-(define (expression-reduce-1 expression)
-  (let loop
-      ((identities
-	(filter (let ((type (rtl:expression-type expression)))
-		  (lambda (identity)
-		    (eq? type (car (cadr identity)))))
-		identities)))
-    (cond ((null? identities)
-	   expression)
-	  ((let ((identity (car identities)))
-	     (let ((in-domain? (car identity))
-		   (matching-operation (cadr identity)))
-	       (let loop
-		   ((operations (cddr identity))
-		    (subexpression ((cadr matching-operation) expression)))
-		 (if (null? operations)
-		     (and (valid-subexpression? subexpression)
-			  (in-domain?
-			   (rtl:expression-value-class subexpression))
-			  subexpression)
-		     (and (eq? (caar operations)
-			       (rtl:expression-type subexpression))
-			  (loop (cdr operations)
-				((cadar operations) subexpression)))))))
-	   => expression-reduce-1)
-	  (else
-	   (loop (cdr identities))))))
+(define-rule reduction (FIXNUM->OBJECT (OBJECT->FIXNUM (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
 
-(define (rtl:float->object-type expression)
-  expression
+(define-rule reduction (OBJECT->UNSIGNED-FIXNUM (FIXNUM->OBJECT (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction (FIXNUM->OBJECT (OBJECT->UNSIGNED-FIXNUM (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction (FIXNUM->ADDRESS (ADDRESS->FIXNUM (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction (ADDRESS->FIXNUM (FIXNUM->ADDRESS (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction (OBJECT->FLOAT (FLOAT->OBJECT (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction (FLOAT->OBJECT (OBJECT->FLOAT (? x)))
+  (QUALIFIER (expression-valid? x))
+  x)
+
+(define-rule reduction
+  (OBJECT->ADDRESS (CONS-POINTER (? type) (? address)))
+  (QUALIFIER (expression-valid? address))
+  type
+  address)
+
+(define-rule reduction
+  (OBJECT->TYPE (CONS-POINTER (? type) (? address)))
+  (QUALIFIER (expression-valid? type))
+  address
+  type)
+
+(define-rule reduction
+  (OBJECT->DATUM (CONS-NON-POINTER (? type)) (? datum))
+  (QUALIFIER (expression-valid? datum))
+  type
+  datum)
+
+(define-rule reduction
+  (OBJECT->TYPE (CONS-NON-POINTER (? type)) (? datum))
+  (QUALIFIER (expression-valid? type))
+  datum
+  type)
+
+(define-rule reduction
+  (OBJECT->TYPE (FLOAT->OBJECT (? float)))
+  ;; Note: We don't require that float be a valid expression here: even
+  ;; if it has been invalidated, no matter what the value would have
+  ;; been, the type is always the same.
+  float
   (rtl:make-machine-constant (ucode-type flonum)))
-
-(define identities
-  ;; Each entry is composed of a value class and a sequence of
-  ;; operations whose composition is the identity for that value
-  ;; class.  Each operation is described by the operator and the
-  ;; selector for the relevant operand.
-  `((,value-class=value? (OBJECT->FIXNUM ,rtl:object->fixnum-expression)
-			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
-    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
-			 (OBJECT->FIXNUM ,rtl:object->fixnum-expression))
-    (,value-class=value? (OBJECT->UNSIGNED-FIXNUM
-			  ,rtl:object->unsigned-fixnum-expression)
-			 (FIXNUM->OBJECT ,rtl:fixnum->object-expression))
-    (,value-class=value? (FIXNUM->OBJECT ,rtl:fixnum->object-expression)
-			 (OBJECT->UNSIGNED-FIXNUM
-			  ,rtl:object->unsigned-fixnum-expression))
-    (,value-class=value? (FIXNUM->ADDRESS ,rtl:fixnum->address-expression)
-			 (ADDRESS->FIXNUM ,rtl:address->fixnum-expression))
-    (,value-class=value? (ADDRESS->FIXNUM ,rtl:address->fixnum-expression)
-			 (FIXNUM->ADDRESS ,rtl:fixnum->address-expression))
-    (,value-class=value? (OBJECT->FLOAT ,rtl:object->float-expression)
-			 (FLOAT->OBJECT ,rtl:float->object-expression))
-    (,value-class=value? (FLOAT->OBJECT ,rtl:float->object-expression)
-			 (OBJECT->FLOAT ,rtl:object->float-expression))
-    (,value-class=address? (OBJECT->ADDRESS ,rtl:object->address-expression)
-			   (CONS-POINTER ,rtl:cons-pointer-datum))
-    ;; The following are not value-class=datum? and value-class=type?
-    ;; because they are slightly more general.
-    (,value-class=immediate? (OBJECT->DATUM ,rtl:object->datum-expression)
-			     (CONS-NON-POINTER ,rtl:cons-non-pointer-datum))
-    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
-			     (CONS-POINTER ,rtl:cons-pointer-type))
-    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
-			     (CONS-NON-POINTER ,rtl:cons-non-pointer-type))
-    (,value-class=immediate? (OBJECT->TYPE ,rtl:object->type-expression)
-			     (FLOAT->OBJECT ,rtl:float->object-type))))
-
-(define (valid-subexpression? expression)
-  ;; Machine registers not allowed because they are volatile.
-  ;; Ideally at this point we could introduce a copy to the
-  ;; value of the machine register required, but it is too late
-  ;; to do this.  Perhaps always copying machine registers out
-  ;; before using them would make this win.
-  (or (not (rtl:register? expression))
-      (rtl:pseudo-register-expression? expression)))
 
 ;;;; Hash
 
