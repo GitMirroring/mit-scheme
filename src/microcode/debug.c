@@ -1223,10 +1223,14 @@ verify_heap_area (const char * name, SCHEME_OBJECT * area, SCHEME_OBJECT * end)
 	  break;
 
 #ifdef CC_SUPPORT_P
-	case GC_COMPILED:
+	case GC_COMPILED_ENTRY:
 	  if (! verify_compiled (object, (unsigned long)area))
 	    complaints += 1;
 	  area += 1;
+	  break;
+	case GC_COMPILED_RETURN:
+	  outf_error ("%#lx: XXX not implemented", (unsigned long)area);
+	  complaints += 1;
 	  break;
 #endif
 
