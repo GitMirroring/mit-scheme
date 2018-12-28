@@ -386,7 +386,13 @@ USA.
 	       (uninterned-symbol ,print-uninterned-symbol)
 	       (variable ,print-variable)
 	       (vector ,print-vector)
-	       (vector-1b ,print-bit-string)))))
+	       (vector-1b ,print-bit-string)))
+   ;; XXX Provisional until next release with the entry/return split.
+   (cond ((microcode-type/name->code 'compiled-return)
+	  => (lambda (type-code:compiled-return)
+	       (vector-set! dispatch-table
+			    type-code:compiled-return
+			    print-compiled-entry))))))
 
 ;;;; Low Level Operations
 
@@ -473,7 +479,7 @@ USA.
 (define (print-default object context)
   (let ((type (user-object-type object)))
     (case (object-gc-type object)
-      ((cell pair triple quadruple vector compiled-entry)
+      ((cell pair triple quadruple vector compiled-entry compiled-return)
        (*print-with-brackets type object context #f))
       ((non-pointer)
        (*print-with-brackets type object context
