@@ -236,7 +236,11 @@ USA.
 ;;;; Utilities
 
 (define (object->fixnum target)
-  (LAP (SAL Q ,target (&U ,scheme-type-width))))
+  ;; Comment to the peephole optimizer that this is actually tagged as
+  ;; a fixnum, unlike ADDRESS->FIXNUM which has the same code but does
+  ;; not assume a fixnum tag.
+  (LAP (COMMENT (PEEPHOLE OBJECT->FIXNUM))
+       (SAL Q ,target (&U ,scheme-type-width))))
 
 (define (fixnum->object target)
   (LAP (OR Q ,target (&U ,(ucode-type FIXNUM)))
