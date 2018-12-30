@@ -291,7 +291,8 @@ USA.
 
 (define (load-signed-immediate target value)
   (cond ((zero? value)
-	 (LAP (XOR Q ,target ,target)))
+         ;; This zeros the upper half but is a shorter instruction.
+	 (LAP (XOR L ,target ,target)))
 	((fits-in-signed-quad? value)
 	 (LAP (MOV Q ,target (& ,value))))
 	(else
@@ -299,7 +300,8 @@ USA.
 
 (define (load-unsigned-immediate target value)
   (cond ((zero? value)
-	 (LAP (XOR Q ,target ,target)))
+         ;; This zeros the upper half but is a shorter instruction.
+	 (LAP (XOR L ,target ,target)))
 	((fits-in-unsigned-quad? value)
 	 (LAP (MOV Q ,target (&U ,value))))
 	(else
