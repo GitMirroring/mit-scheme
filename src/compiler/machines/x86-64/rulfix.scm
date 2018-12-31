@@ -1825,68 +1825,148 @@ USA.
 (define (fast-remainder/signed n d width multiplier s1 s2)
   (- n (* d (fast-quotient/signed n d width multiplier s1 s2))))
 
-(define (fast-division target* source* d finish)
-  (flush-register! rax)
-  (need-register! rax)
-  (flush-register! rdx)
-  (need-register! rdx)
+(define (fast-division target temp d)
+  ;; Caller must guarantee rax, rdx, and temp are free.
   (receive (multiplier s1 s2) (fast-divide-prepare (abs d) scheme-object-width)
-    (let* ((if-negative1 (generate-label 'QUO-NEGATIVE-1))
-	   (if-negative2 (generate-label 'QUO-NEGATIVE-2))
-	   (merge1 (generate-label 'QUO-MULTIPLY))
-	   (merge2 (generate-label 'QUO-RESULT))
-	   (source (source-register-reference source*))
-	   (target (target-register-reference target*)))
-      (LAP (MOV Q ,target ,source)
-	   ;; Divide by 2^t so that factor doesn't mess us up.
-	   (SAR Q ,target (&U ,scheme-type-width))
-	   ;; No need to CMP; SAR sets the SF bit for us to detect
-	   ;; whether the input is negative.
-	   (JS B (@PCR ,if-negative1))
-	   (JMP (@PCR ,merge1))
-	  (LABEL ,if-negative1)
-	   (NEG Q ,target)
-	  (LABEL ,merge1)
-	   ;; MUL takes argument in rax, so put it there.
-	   (MOV Q (R ,rax) ,target)
-	   ;; Load the multiplier into rdx, which is free until we MUL.
-	   (MOV Q (R ,rdx) (&U ,multiplier))
-	   ;; Compute the 128-bit product rax * multiplier, storing the
-	   ;; high 64 bits in rdx and the low 64 bits in rax.  We are
-	   ;; not interested in the low 64 bits, so rax is now free for
-	   ;; reuse.
-	   (MUL Q ((R ,rdx) : (R ,rax)) (R ,rdx))
-	   ;; Compute ((((n - p) >> s1) + p) >> s2) where p is the high
-	   ;; 64 bits of the product, in rdx.
-	   (SUB Q ,target (R ,rdx))
-	   (SHR Q ,target (&U ,s1))
-	   (ADD Q ,target (R ,rdx))
-	   (SHR Q ,target (&U ,s2))
-	   ;; Reapply the sign.
-	   (CMP Q ,source (& 0))
-	   (JL B (@PCR ,if-negative2))
-	   ,@(if (negative? d) (LAP (NEG Q ,target)) (LAP))
-	   (JMP (@PCR ,merge2))
-	  (LABEL ,if-negative2)
-	   ,@(if (negative? d) (LAP) (LAP (NEG Q ,target)))
-	  (LABEL ,merge2)
-	   ;; Convert back to fixnum representation with low zero bits.
-	   (SAL Q ,target (&U ,scheme-type-width))
-	   ,@(finish target source (INST-EA (R ,rax)))))))
+    (LAP
+     (SAR Q ,target (&U ,scheme-type-width)) ;Divide by 2^t and test sign.
+     (SETNS (R ,rdx))			;rdx := 0 if negative, 1 if nonnegative
+     (AND Q (R ,rdx) (& #xff))          ;Clear garbage in upper part of rdx.
+     (LEA Q ,temp (@ROI ,rdx -1 ,rdx 1)) ;temp := rdx + rdx*1 - 1 = sign of n
+     (IMUL Q ,target ,temp)		;Remove sign.
+     ,@(if (negative? d) (LAP (NEG Q ,temp)) (LAP)) ;Apply sign of d.
+     (MOV Q (R ,rax) ,target)		;Load |n| into rax for MUL.
+     (MOV Q (R ,rdx) (&U ,multiplier))	;rdx is conveniently free until MUL.
+     (MUL Q ((R ,rdx) : (R ,rax)) (R ,rdx)) ;rdx*2^64 + rax := rax*rdx
+     (SUB Q ,target (R ,rdx))		;(((n - rdx) >> s1) + rdx) >> s2
+     (SHR Q ,target (&U ,s1))
+     (ADD Q ,target (R ,rdx))
+     (SHR Q ,target (&U ,s2))
+     (IMUL Q ,target ,temp)		;Apply sign of n.
+     ;; Finally, multiply by the fixnum factor 2^t.
+     (SAL Q ,target (&U ,scheme-type-width)))))
 
 (define (fixnum-quotient/constant target source d)
-  (fast-division target source d
-    (lambda (quotient numerator temp)
-      (declare (ignore quotient numerator temp))
-      (LAP))))
+  (let* ((target (restricted-move-to-target! source target (list rax rdx)))
+	 (temp (temporary-register-reference)))
+    (assert (not (member target (map register-reference (list rax rdx)))))
+    (assert (not (memv temp (list rax rdx))))
+    (fast-division target temp d)))
 
 (define (fixnum-remainder/constant target source d)
-  (fast-division target source d
-    (lambda (quotient numerator temp)
-      ;; Compute n - d q.
-      (LAP (MOV Q ,temp (& ,(- d)))
-	   (IMUL Q ,quotient ,temp)
-	   (ADD Q ,quotient ,numerator)))))
+  (receive (numerator target)
+	   (restricted-move-copy-to-target! source target (list rax rdx))
+    (let ((temp (temporary-register-reference)))
+      (assert (not (member numerator (map register-reference (list rax rdx)))))
+      (assert (not (member target (map register-reference (list rax rdx)))))
+      (assert (not (member temp (map register-reference (list rax rdx)))))
+      (LAP
+       ;; target := q
+       ,@(fast-division target temp d)
+       ;; target := -d q
+       ,@(if (fits-in-signed-long? (- d))
+	     (LAP (IMUL Q ,target ,target (& ,(- d))))
+	     (LAP (MOV Q ,temp (& ,(- d)))
+		  (IMUL Q ,target ,temp)))
+       ;; target := n - d q
+       (ADD Q ,target ,numerator)))))
+
+(define (restricted-move-to-target! source target restricted-registers)
+  (for-each require-register! restricted-registers)
+  (standard-move-to-target! source target))
+
+(define (restricted-move-copy-to-target! source target restricted-registers)
+  (for-each require-register! restricted-registers)
+  (let* ((source-ref (source-register-reference source))
+         (target (target-register target)))
+    (prefix-instructions! (reference->register-transfer source-ref target))
+    (values source-ref (register-reference target))))
+
+#|
+(define (restricted-move-to-target! target source restricted-registers)
+  (for-each need-register! restricted-registers)
+  (let ((aliases
+	 (let ((aliases (pseudo-register-aliases *register-map* source)))
+	   (if aliases
+	       (filter (lambda (alias)
+			 (and (register-type? alias 'GENERAL)
+			      (not (memv alias restricted-registers))))
+		       aliases)
+	       '()))))
+    (begin0 (cond ((and (pair? aliases)
+			(or (dead-register? source)
+			    (pair? (cdr aliases))))
+		   ;; Source has an available alias, and either has
+		   ;; alternative aliases or doesn't need them because
+		   ;; it's dead.  Take the first available alias.
+		   (let ((alias (car aliases)))
+		     (delete-register! alias)
+		     (delete-dead-registers!)
+		     (add-pseudo-register-alias! target alias)
+		     (register-reference alias)))
+		  (else
+		   ;; Source may or may not have an alias.  Allocate a
+		   ;; temporary for our target and load the source into
+		   ;; it.
+		   (let* ((source-ref
+			   (standard-register-reference source 'GENERAL true))
+			  (alias
+			   (allocate-temporary-register! 'GENERAL)))
+		     (prefix-instructions!
+		      (reference->register-transfer source-ref alias))
+		     (delete-dead-registers!)
+		     (add-pseudo-register-alias! target alias)
+		     (register-reference alias))))
+      (for-each flush-register! restricted-registers))))
+
+(define (restricted-move-copy-to-target! source target restricted-registers)
+  (for-each need-register! restricted-registers)
+  (let ((aliases
+	 (let ((aliases (pseudo-register-aliases *register-map* source)))
+	   (if aliases
+	       (filter (lambda (alias)
+			 (and (register-type? alias 'GENERAL)
+			      (not (memv alias restricted-registers))))
+		       aliases)
+	       '()))))
+    (begin0 (cond ((and (pair? aliases)
+			(pair? (cdr aliases)))
+		   ;; Source has enough available aliases to provide
+		   ;; one for the target and one to keep.
+		   (let* ((target-alias (car aliases))
+			  (source-alias (cadr aliases)))
+		     (delete-register! target-alias)
+		     (need-register! source-alias)
+		     (delete-dead-registers!)
+		     (add-pseudo-register-alias! target target-alias)
+		     (values (register-reference source-alias)
+			     (register-reference target-alias))))
+		  ((pair? aliases)
+		   ;; Only one.  Allocate a temporary for the target
+		   ;; and load the source into it.
+		   (let* ((source-alias (car aliases))
+			  (target-alias
+			   (allocate-temporary-register! 'GENERAL)))
+		     (prefix-instructions!
+		      (register->register-transfer source-alias target-alias))
+		     (delete-dead-registers!)
+		     (add-pseudo-register-alias! target target-alias)
+		     (values (register-reference source-alias)
+			     (register-reference target-alias))))
+		  (else
+		   ;; None.  Load a fresh alias register for the source
+		   ;; and a temporary for the target.
+		   (let* ((source-alias (load-alias-register! source 'GENERAL))
+			  (target-alias
+			   (allocate-temporary-register! 'GENERAL)))
+		     (prefix-instructions!
+		      (register->register-transfer source-alias target-alias))
+		     (delete-dead-registers!)
+		     (add-pseudo-register-alias! target target-alias)
+		     (values (register-reference source-alias)
+			     (register-reference target-alias)))))
+      (for-each flush-register! restricted-registers))))
+|#
 
 (define (fixnum-predicate/unary->binary predicate)
   (case predicate
