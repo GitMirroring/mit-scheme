@@ -310,6 +310,50 @@ USA.
 (define-trivial-instruction CDQ #x99)
 
 (let-syntax
+    ((define-cmov-instruction
+      (sc-macro-transformer
+       (lambda (form environment)
+         environment
+         (let ((mnemonic (cadr form))
+               (opcode (caddr form)))
+           `(define-instruction ,mnemonic
+              (((? size operand-size) (? target r-ea) (? source r/m-ea))
+               (PREFIX (OPERAND size) (ModR/M source target))
+               (BITS (8 #x0f)
+                     (8 ,opcode))
+               (ModR/M source target))))))))
+  (define-cmov-instruction CMOVA #x47)
+  (define-cmov-instruction CMOVAE #x43)
+  (define-cmov-instruction CMOVB #x42)
+  (define-cmov-instruction CMOVBE #x46)
+  (define-cmov-instruction CMOVC #x42)
+  (define-cmov-instruction CMOVE #x44)
+  (define-cmov-instruction CMOVG #x4f)
+  (define-cmov-instruction CMOVGE #x4d)
+  (define-cmov-instruction CMOVL #x4c)
+  (define-cmov-instruction CMOVLE #x4e)
+  (define-cmov-instruction CMOVNA #x46)
+  (define-cmov-instruction CMOVNAE #x42)
+  (define-cmov-instruction CMOVNB #x43)
+  (define-cmov-instruction CMOVNBE #x47)
+  (define-cmov-instruction CMOVNC #x43)
+  (define-cmov-instruction CMOVNE #x45)
+  (define-cmov-instruction CMOVNG #x4e)
+  (define-cmov-instruction CMOVNGE #x4c)
+  (define-cmov-instruction CMOVNL #x4d)
+  (define-cmov-instruction CMOVNLE #x4f)
+  (define-cmov-instruction CMOVNO #x41)
+  (define-cmov-instruction CMOVNP #x4b)
+  (define-cmov-instruction CMOVNS #x49)
+  (define-cmov-instruction CMOVNZ #x45)
+  (define-cmov-instruction CMOVO #x40)
+  (define-cmov-instruction CMOVP #x4a)
+  (define-cmov-instruction CMOVPE #x4a)
+  (define-cmov-instruction CMOVPO #x4b)
+  (define-cmov-instruction CMOVS #x48)
+  (define-cmov-instruction CMOVZ #x44))
+
+(let-syntax
     ((define-inc/dec
       (sc-macro-transformer
        (lambda (form environment)
