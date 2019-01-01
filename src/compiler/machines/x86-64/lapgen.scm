@@ -526,23 +526,39 @@ USA.
 	     (and (rtl:offset-address? base)
 		  (rtl:machine-constant? offset)
 		  (rtl:register? (rtl:offset-address-base base))
-		  (rtl:register? (rtl:offset-address-offset base)))))
+		  (or (rtl:register? (rtl:offset-address-offset base))
+		      (rtl:machine-constant?
+		       (rtl:offset-address-offset base))))))
        expression))
 
 (define (offset->reference! offset)
   ;; OFFSET must be a simple offset
   (let ((base (rtl:offset-base offset))
 	(offset (rtl:offset-offset offset)))
-    (cond ((not (rtl:register? base))
+    (cond ((and (rtl:offset-address? base)
+		(not (rtl:machine-constant? (rtl:offset-address-offset base))))
 	   (indexed-ea (rtl:register-number (rtl:offset-address-base base))
 		       (rtl:register-number (rtl:offset-address-offset base))
 		       address-units-per-object
 		       (* address-units-per-object
 			  (rtl:machine-constant-value offset))))
 	  ((rtl:machine-constant? offset)
-	   (indirect-reference! (rtl:register-number base)
-				(rtl:machine-constant-value offset)))
+	   (if (rtl:offset-address? base)
+	       (let ((base* (rtl:offset-address-base base))
+		     (offset* (rtl:offset-address-offset base)))
+		 (assert (rtl:register? base*))
+		 (assert (rtl:machine-constant? offset*))
+		 (indirect-reference!
+		  (rtl:register-number base*)
+		  (+ (rtl:machine-constant-value offset)
+		     (rtl:machine-constant-value offset*))))
+	       (begin
+		 (assert (rtl:register? base))
+		 (indirect-reference! (rtl:register-number base)
+				      (rtl:machine-constant-value offset)))))
 	  (else
+	   (assert (rtl:register? base))
+	   (assert (rtl:register? offset))
 	   (indexed-ea (rtl:register-number base)
 		       (rtl:register-number offset)
 		       address-units-per-object
