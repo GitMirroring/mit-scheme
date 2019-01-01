@@ -41,6 +41,7 @@ USA.
 (define known-tests
   '(
     "compiler/test-fgopt-conect"
+    "compiler/test-lsh"
     "compiler/test-varname"
     "compiler/test-y"
     "microcode/test-chacha"
