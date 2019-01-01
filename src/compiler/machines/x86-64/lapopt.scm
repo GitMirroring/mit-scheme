@@ -157,12 +157,19 @@ USA.
     (cond ((assq symbol dict) => cdr)
 	  (else (error "Undefined lapopt pattern symbol" symbol dict)))))
 
-(define-lapopt 'PUSH-POP->MOVE
-  `((PUSH Q (R (? reg1)))
-    (POP Q (R (? reg2))))
+(define-lapopt 'PUSH-EA-POP-REG->MOVE
+  `((PUSH Q (? ea))
+    (POP Q (R (? reg))))
   #F
   (lambda (dict)
-    `((MOV Q (R ,(dict 'reg2)) (R ,(dict 'reg1))))))
+    `((MOV Q (R ,(dict 'reg)) ,(dict 'ea)))))
+
+(define-lapopt 'PUSH-REG-POP-EA->MOVE
+  `((PUSH Q (R (? reg)))
+    (POP Q (? ea)))
+  #F
+  (lambda (dict)
+    `((MOV Q ,(dict 'ea) (R ,(dict 'reg))))))
 
 (define-lapopt 'PUSH-POP->NOP
   `((PUSH Q (? ea))
