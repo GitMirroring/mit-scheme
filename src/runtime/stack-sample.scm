@@ -78,9 +78,6 @@
 
 ;;;; Miscellaneous Kludgerosity
 
-(define (compiled-entry? object)
-  (object-type? (ucode-type compiled-entry) object))
-
 (define event-return-address 'uninitialized)
 
 (define (initialize-package!)
@@ -231,7 +228,7 @@
           (else (find-subproblem stack-frame)))))
 
 (define (find-subproblem stack-frame)
-  (if (compiled-entry? (stack-frame/return-address stack-frame))
+  (if (compiled-return-address? (stack-frame/return-address stack-frame))
       stack-frame
       (find-next-subproblem stack-frame)))
 
@@ -254,23 +251,28 @@
 
 (define (intern-entry profile stack-frame)
   (let ((return-address (stack-frame/return-address stack-frame)))
-    (if (compiled-entry? return-address)
-        (let ((return-address
-               (if (compiled-closure? return-address)
-                   (compiled-closure->entry return-address)
-                   return-address)))
-          (hash-table-intern! (profile.entries profile) return-address
-            (lambda ()
-              (receive (expression environment subexpression)
-                       (stack-frame/debugging-info stack-frame)
-                (make-entry return-address
-                            expression
-                            subexpression
-                            (environment-ancestry-names environment))))))
-        ;; What to do for interpreted code?  Fetch the debugging
-        ;; information and use the expression, subexpression, and
-        ;; environment ancestry names as the key?
-        #f)))
+    (cond ((compiled-closure? return-address)
+           ;; Don't want to record these because they may leak space.
+           (warn "Closure as return address on stack:" return-address)
+           #f)
+          ((compiled-return-address? return-address)
+           (hash-table-intern! (profile.entries profile) return-address
+             (lambda ()
+               (receive (expression environment subexpression)
+                        (stack-frame/debugging-info stack-frame)
+                 (make-entry return-address
+                             expression
+                             subexpression
+                             (environment-ancestry-names environment))))))
+          ((compiled-entry? return-address)
+           ;; Can't imagine why these would turn up.
+           (warn "Non-continuation compiled code on stack:" return-address)
+           #f)
+          (else
+           ;; What to do for interpreted code?  Fetch the debugging
+           ;; information and use the expression, subexpression, and
+           ;; environment ancestry names as the key?
+           #f))))
 
 ;;;; Display
 
