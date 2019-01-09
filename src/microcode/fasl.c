@@ -310,7 +310,11 @@ insn_t *
 fasl_cc_address (SCHEME_OBJECT o, fasl_header_t * h)
 {
   if ((FASLHDR_MEMORY_BASE (h)) != 0)
+#ifdef HEAP_IN_LOW_MEMORY
     return (((insn_t *) (FASLHDR_MEMORY_BASE (h))) + (OBJECT_DATUM (o)));
+#else
+    return ((insn_t *) ((FASLHDR_MEMORY_BASE (h)) + (OBJECT_DATUM (o))));
+#endif
   if ((FASLHDR_ARCH (h)) == CURRENT_FASL_ARCH)
     return (CC_ENTRY_ADDRESS (o));
   abort ();
