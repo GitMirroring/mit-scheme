@@ -651,6 +651,14 @@ extern void win32_stack_reset (void);
 #  undef Conditional_Bug
 #endif
 
+#ifdef CC_IS_SVM
+#  undef CURRENT_FASL_ARCH
+#  define CURRENT_FASL_ARCH svm_fasl_arch
+#  if SIZEOF_UNSIGNED_LONG == 4
+#    define HEAP_IN_LOW_MEMORY
+#  endif
+#endif
+
 #ifdef NO_HEAP_IN_LOW_MEMORY
 #  undef HEAP_IN_LOW_MEMORY
 #endif
@@ -659,11 +667,6 @@ extern void win32_stack_reset (void);
    extern void * mmap_heap_malloc (unsigned long);
 #  define HEAP_MALLOC mmap_heap_malloc
 #  define HEAP_FREE(address)
-#endif
-
-#ifdef CC_IS_SVM
-#  undef CURRENT_FASL_ARCH
-#  define CURRENT_FASL_ARCH svm_fasl_arch
 #endif
 
 #endif /* SCM_CONFSHARED_H */

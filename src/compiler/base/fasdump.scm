@@ -265,8 +265,8 @@ USA.
 
 (define fasl-format:x86-64 fasl-format:amd64)
 
-(define fasl-format:svm1-32be (make-byte32be-fasl-format 26))
-(define fasl-format:svm1-32le (make-byte32le-fasl-format 27))
+(define fasl-format:svm1-32be (make-word32be-fasl-format 26))
+(define fasl-format:svm1-32le (make-word32le-fasl-format 27))
 (define fasl-format:svm1-64be (make-byte64be-fasl-format 28))
 (define fasl-format:svm1-64le (make-byte64le-fasl-format 29))
 
