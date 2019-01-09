@@ -173,8 +173,10 @@ USA.
 			 ((ucode-primitive primitive-object-set-type)
 			  (ucode-type compiled-entry)
 			  (make-non-pointer-object
-			   (+ offset
-			      (object-datum code-vector)))))))))
+			   ((ucode-primitive primitive-address->datum 1)
+			    (+ offset
+			       ((ucode-primitive primitive-datum->address 1)
+				(object-datum code-vector)))))))))))
 		(cc-vector/entry-points cc-vector)))))
     (let ((label->expression
 	   (lambda (label)
