@@ -551,9 +551,9 @@ static
 DEFINE_GC_OBJECT_HANDLER (fasload_cc_entry)
 {
 #ifdef CC_SUPPORT_P
-  return
-    (CC_ENTRY_NEW_ADDRESS (object,
-			   (relocate_address (OLD_CC_ADDRESS (object)))));
+  insn_t * oaddr = (OLD_CC_ADDRESS (object));
+  insn_t * naddr = (relocate_address (oaddr));
+  return (CC_ENTRY_NEW_ADDRESS (object, naddr));
 #else
   return (object);
 #endif
