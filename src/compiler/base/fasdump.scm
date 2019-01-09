@@ -45,12 +45,13 @@ USA.
   (words-per-bignum-digit #f read-only #t)
   (greatest-fixnum #f read-only #t)
   (least-fixnum #f read-only #t)
+  (address->datum #f read-only #t)
   (write-word #f read-only #t)
   (write-untagged-word #f read-only #t)
   (write-bignum-digit #f read-only #t)
   (write-float #f read-only #t))
 
-(define (make-std-fasl-format architecture bytes-per-word
+(define (make-std-fasl-format architecture bytes-per-word address->datum
           write-word write-untagged-word write-bignum-digit write-float)
   (make-fasl-format
    'VERSION             10              ;FASL_VERSION_C_CODE
@@ -68,34 +69,35 @@ USA.
    'WORDS-PER-BIGNUM-DIGIT      1
    'GREATEST-FIXNUM     (bit-mask (- (* bytes-per-word 8) 7) 0)
    'LEAST-FIXNUM        (- -1 (bit-mask (- (* bytes-per-word 8) 7) 0))
+   'ADDRESS->DATUM      address->datum
    'WRITE-WORD          write-word
    'WRITE-UNTAGGED-WORD write-untagged-word
    'WRITE-BIGNUM-DIGIT  write-bignum-digit
    'WRITE-FLOAT         write-float))
 
-(define (make-std32be-fasl-format architecture)
-  (make-std-fasl-format architecture 4
+(define (make-std32be-fasl-format architecture address->datum)
+  (make-std-fasl-format architecture 4 address->datum
                         write-std32be-word
                         write-std32be-untagged-word
                         write-std32be-bignum-digit
                         write-ieee754-binary64-be))
 
-(define (make-std32le-fasl-format architecture)
-  (make-std-fasl-format architecture 4
+(define (make-std32le-fasl-format architecture address->datum)
+  (make-std-fasl-format architecture 4 address->datum
                         write-std32le-word
                         write-std32le-untagged-word
                         write-std32le-bignum-digit
                         write-ieee754-binary64-le))
 
-(define (make-std64be-fasl-format architecture)
-  (make-std-fasl-format architecture 8
+(define (make-std64be-fasl-format architecture address->datum)
+  (make-std-fasl-format architecture 8 address->datum
                         write-std64be-word
                         write-std64be-untagged-word
                         write-std64be-bignum-digit
                         write-ieee754-binary64-be))
 
-(define (make-std64le-fasl-format architecture)
-  (make-std-fasl-format architecture 8
+(define (make-std64le-fasl-format architecture address->datum)
+  (make-std-fasl-format architecture 8 address->datum
                         write-std64le-word
                         write-std64le-untagged-word
                         write-std64le-bignum-digit
@@ -211,24 +213,65 @@ USA.
 
 ;;;;; Known formats
 
-(define fasl-format:i386     (make-std32le-fasl-format  6))
-(define fasl-format:sparc32  (make-std32le-fasl-format 14))
-(define fasl-format:mips32be (make-std32be-fasl-format 15))
-(define fasl-format:mips32le (make-std32le-fasl-format 15))
-(define fasl-format:alpha    (make-std64le-fasl-format 18))
-(define fasl-format:ppc32    (make-std32be-fasl-format 20))
-(define fasl-format:amd64    (make-std64le-fasl-format 21))
-(define fasl-format:arm32le  (make-std32le-fasl-format 24))
-(define fasl-format:arm32be  (make-std32le-fasl-format 24))
-(define fasl-format:aarch64le (make-std64le-fasl-format 25))
-(define fasl-format:aarch64be (make-std64be-fasl-format 25))
+(define (byte-addressed/address->datum format address)
+  (* address (format.bytes-per-word format)))
+
+(define (word-addressed/address->datum format address)
+  format
+  address)
+
+;;; We treat some 32-bit architectures (e.g., mips) as word-addressed
+;;; in order to have a larger heap anywhere within 26 bits of address
+;;; space, at the cost of shifting to dereference.
+;;;
+;;; We treat other 32-bit architectures (e.g., i386) as byte-addressed
+;;; in order to run faster and/or because it takes effort to teach the
+;;; compiler about the shifting, if we can ensure the heap lies within
+;;; the lower 26 bits of address space (HEAP_IN_LOW_MEMORY).
+;;;
+;;; We treat all 64-bit as HEAP_IN_LOW_MEMORY because we can usually
+;;; get a heap pretty much wherever we want and a 58- vs 60-bit address
+;;; space doesn't matter much.
+
+(define (make-byte32be-fasl-format architecture)
+  (make-std32be-fasl-format architecture byte-addressed/address->datum))
+
+(define (make-byte32le-fasl-format architecture)
+  (make-std32le-fasl-format architecture byte-addressed/address->datum))
+
+(define (make-word32be-fasl-format architecture)
+  (make-std32be-fasl-format architecture word-addressed/address->datum))
+
+(define (make-word32le-fasl-format architecture)
+  (make-std32le-fasl-format architecture word-addressed/address->datum))
+
+(define (make-byte64be-fasl-format architecture)
+  (make-std64be-fasl-format architecture byte-addressed/address->datum))
+
+(define (make-byte64le-fasl-format architecture)
+  (make-std64le-fasl-format architecture byte-addressed/address->datum))
+
+(define fasl-format:i386     (make-byte32le-fasl-format  6))
+(define fasl-format:sparc32  (make-byte32le-fasl-format 14))
+(define fasl-format:mips32be (make-byte32be-fasl-format 15)) ;[1]
+(define fasl-format:mips32le (make-byte32le-fasl-format 15)) ;[1]
+(define fasl-format:alpha    (make-byte64le-fasl-format 18))
+(define fasl-format:ppc32    (make-word32be-fasl-format 20))
+(define fasl-format:amd64    (make-byte64le-fasl-format 21))
+(define fasl-format:arm32le  (make-word32le-fasl-format 24))
+(define fasl-format:arm32be  (make-word32le-fasl-format 24))
+(define fasl-format:aarch64le (make-byte64le-fasl-format 25))
+(define fasl-format:aarch64be (make-byte64be-fasl-format 25))
 
 (define fasl-format:x86-64 fasl-format:amd64)
 
-(define fasl-format:svm1-32be (make-std32be-fasl-format 26))
-(define fasl-format:svm1-32le (make-std32le-fasl-format 27))
-(define fasl-format:svm1-64be (make-std64be-fasl-format 28))
-(define fasl-format:svm1-64le (make-std64le-fasl-format 29))
+(define fasl-format:svm1-32be (make-byte32be-fasl-format 26))
+(define fasl-format:svm1-32le (make-byte32le-fasl-format 27))
+(define fasl-format:svm1-64be (make-byte64be-fasl-format 28))
+(define fasl-format:svm1-64le (make-byte64le-fasl-format 29))
+
+;;; [1] Apparently on MIPS we also set bit 28 of each address at
+;;; run-time, but that doesn't affect the addresses in the fasl file.
 
 #;
 (define fasl-format:pdp10
@@ -245,6 +288,7 @@ USA.
    'WORDS-PER-BIGNUM-DIGIT      1/2     ;XXX
    'GREATEST-FIXNUM     #x1fffffff
    'LEAST-FIXNUM        #x-20000000
+   'ADDRESS->DATUM      word-addressed/address->datum
    'WRITE-WORD          write-pdp10-word
    'WRITE-BIGNUM-DIGIT  write-pdp10-bignum-digit
    'WRITE-FLOAT         write-pdp10-float))
@@ -291,7 +335,7 @@ USA.
                                            (format.bytes-per-word format)))
              (assert (fasdump-at-address? state 0))
              (fasdump-object state object)
-             (assert (fasdump-at-address? state (format.bytes-per-word format)))
+             (assert (fasdump-at-address? state 1))
              (do () ((queue-empty? (state.queue state)))
                (let ((object.n-words (dequeue! (state.queue state))))
                  (let ((object (car object.n-words))
@@ -565,16 +609,27 @@ USA.
     (fasdump-word state type datum)))
 
 (define (fasdump-encode-object state object)
+  (define (address->datum address)
+    (let ((format (state.format state)))
+      ((format.address->datum format)
+       format
+       address)))
   (fasdump-classify state object
     (lambda (type datum)                ;if-non-pointer
       (values type datum))
     (lambda (type name arity)           ;if-primitive
       (values type (get-primitive-number state name arity)))
     (lambda (type n-words)              ;if-pointer
-      (values type (get-object-address state object n-words 0 1)))
+      (values type
+	      (address->datum (get-object-address state object n-words 0 1))))
     (lambda (type n-words overhead alignment) ;if-aligned-pointer
       (values type
-              (get-object-address state object n-words overhead alignment)))))
+              (address->datum
+	       (get-object-address state
+				   object
+				   n-words
+				   overhead
+				   alignment))))))
 
 (define (get-primitive-number state name arity)
   (let* ((primitive-name->number (state.primitive-name->number state))
@@ -598,13 +653,14 @@ USA.
         (do ((i 0 (+ i 1))) ((>= i n-padding-words))
           (enqueue! (state.queue state) (cons #f 1)))
         (enqueue! (state.queue state) (cons object (+ overhead n-words)))
-        (* (- aligned-address overhead)
-           (format.bytes-per-word (state.format state)))))))
+        (- aligned-address overhead)))))
 
 (define (fasdump-address state)
-  (- (binary-port-position (state.output-port state))
-     (* fasl-header-n-words
-        (format.bytes-per-word (state.format state)))))
+  (let ((position (binary-port-position (state.output-port state)))
+	(bytes-per-word (format.bytes-per-word (state.format state))))
+    (assert (= 0 (remainder position bytes-per-word)))
+    (- (quotient position bytes-per-word)
+       fasl-header-n-words)))
 
 (define (fasdump-at-address? state address)
   (= (fasdump-address state) address))
