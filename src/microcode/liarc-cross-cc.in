@@ -26,13 +26,16 @@
 set -e
 
 if [ ${#} -lt 2 ]; then
-    echo "usage: ${0} SOFILE OFILE ..."
+    echo "usage: ${0} OUTPUT INPUT [OPTIONS]"
     exit 1
 fi
 
 OUT=${1}
 shift
+IN=${1}
+shift
 
-CMD="@TARGET_CC@ @TARGET_LDFLAGS@ @LIARC_TARGET_LDFLAGS@ @LIARC_LDFLAGS@ -o ${OUT} ${@}"
+CMD="@CC@ @DEFS@ @SCHEME_DEFS@ @CPPFLAGS@ @CFLAGS@ @LIARC_CFLAGS@"
+CMD="${CMD} ${@} -o ${OUT} -c ${IN}"
 echo "${CMD}"
 eval "${CMD}"

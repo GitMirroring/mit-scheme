@@ -174,7 +174,7 @@ PLUGINS_TOOLCHAIN = lib/all.com lib/runtime.com microcode/scheme \
 # parallel makes.
 LIARC_TOOLCHAIN = stamp_liarc-toolchain
 stamp_liarc-toolchain:
-	+(cd microcode && $(MAKE) gen-nonce extract-liarc-decls)
+	+(cd microcode && $(MAKE) xgen-nonce xextract-liarc-decls)
 	echo done > $@
 
 ### For the subsystems, we have several rules:
@@ -206,7 +206,7 @@ stamp_liarc-toolchain:
 RUNTIME_CREF_TARGETS = syntax-runtime
 RUNTIME_HOST_TARGETS = compile-runtime $(RUNTIME_HOST_LIARC_TARGETS)
 @IF_LIARC@RUNTIME_HOST_LIARC_TARGETS = runtime/runtime-unx.c
-@IF_LIARC@RUNTIME_LIARC_TARGETS = # nothing, statically linked into microcode
+@IF_LIARC@RUNTIME_LIARC_TARGETS = bundle-runtime
 @IF_NATIVE@RUNTIME_DEPEND_TARGETS = $(RUNTIME_HOST_TARGETS) $(RUNTIME_LIARC_TARGETS)
 @IF_CROSS@RUNTIME_DEPEND_TARGETS = stamp_cross-finished
 
@@ -224,6 +224,11 @@ syntax-runtime: $(TOOLCHAIN)
 	 echo '  (lambda () (load "runtime.sf")))') \
 	| $(TOOL_COMPILER)
 
+.PHONY: bundle-runtime
+bundle-runtime: $(LIARC_TOOLCHAIN)
+@IF_NATIVE@bundle-runtime: $(RUNTIME_HOST_TARGETS)
+@IF_CROSS@bundle-runtime: stamp_cross-host
+	+(cd runtime && $(MAKE) runtime.a)
 runtime/runtime-unx.pkd: $(RUNTIME_CREF_TARGETS)
 
 ################
@@ -452,7 +457,7 @@ ffi/ffi-unx.pkd: $(FFI_CREF_TARGETS)
 
 SOS_CREF_TARGETS = compile-sos # no separate syntax step
 SOS_HOST_TARGETS = compile-sos $(SOS_HOST_LIARC_TARGETS)
-@IF_LIARC@FFI_HOST_LIARC_TARGETS = sos/sos-unx.c
+@IF_LIARC@SOS_HOST_LIARC_TARGETS = sos/sos-unx.c
 @IF_LIARC@SOS_LIARC_TARGETS = bundle-sos
 @IF_NATIVE@SOS_DEPEND_TARGETS = $(SOS_HOST_TARGETS) $(SOS_LIARC_TARGETS)
 @IF_CROSS@SOS_DEPEND_TARGETS = stamp_cross-finished

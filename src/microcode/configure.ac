@@ -162,9 +162,6 @@ OPTIONAL_SOURCES=
 OPTIONAL_OBJECTS=
 SCHEME_DEFS=-DMIT_SCHEME
 SCHEME_LDFLAGS=
-LIARC_CFLAGS=
-LIARC_LDFLAGS=
-LIARC_LOADER='${SCHEME_EXE}'
 LIARC_VARS=/dev/null
 LIARC_RULES=/dev/null
 AUX_PROGRAMS=
@@ -203,7 +200,16 @@ AC_PROG_INSTALL
 AC_PROG_LN_S
 AC_PROG_MAKE_SET
 
+# CC is the C compiler that runs on the host to make programs that run
+# on the target.
+
+# C compiler that runs on the host to make programs that run on the
+# host.
 : ${HOST_CC:=${CC}}
+
+# C compiler that runs on the target to make programs that run on the
+# target.
+: ${TARGET_CC:=${CC}}
 
 if test x"${GCC}" = xyes; then
 
@@ -361,7 +367,9 @@ darwin*)
     CFLAGS="${CFLAGS} ${MACOS_CFLAGS}"
     LDFLAGS="${LDFLAGS} ${MACOS_CFLAGS} -Wl,-syslibroot,${MACOS_SYSROOT}"
     LDFLAGS="${LDFLAGS} -framework CoreFoundation"
-    LIARC_LDFLAGS="${LIARC_LDFLAGS} -bundle -bundle_loader ${LIARC_LOADER}"
+    TARGET_LDFLAGS="${LDFLAGS} ${MACOS_CFLAGS} -Wl,-syslibroot,${MACOS_SYSROOT}"
+    LIARC_CROSS_LDFLAGS="${LIARC_LDFLAGS} -bundle -bundle_loader ${builddir}/scheme"
+    LIARC_TARGET_LFLAGS="${LIARC_LDFLAGS} -bundle -bundle_loader ${bindir}/${EXE_NAME}"
     AUX_PROGRAMS="${AUX_PROGRAMS} macosx-starter"
     ;;
 netbsd*)
@@ -885,6 +893,8 @@ svm1-32be|svm1-32le|svm1-64be|svm1-64le)
 esac
 
 if test x"${mit_scheme_compiler_target}" = xc; then
+    AC_CONFIG_FILES([liarc-cross-cc], [chmod +x liarc-cross-cc])
+    AC_CONFIG_FILES([liarc-cross-ld], [chmod +x liarc-cross-ld])
     AC_CONFIG_FILES([liarc-cc], [chmod +x liarc-cc])
     AC_CONFIG_FILES([liarc-ld], [chmod +x liarc-ld])
 fi
@@ -908,6 +918,11 @@ for base in ${OPTIONAL_BASES}; do
     OPTIONAL_OBJECTS="${OPTIONAL_OBJECTS} ${base}.o"
 done
 
+if test x$cross_compiling != xyes; then
+  : ${TARGET_CPPFLAGS="${CPPFLAGS}"}
+  : ${TARGET_LDFLAGS="${LDFLAGS}"}
+fi
+
 CFLAGS="${CFLAGS} ${CFLAGS_WERROR}"
 LIARC_CFLAGS="${LIARC_CFLAGS} ${CFLAGS_WNOERROR}"
 
@@ -921,7 +936,8 @@ AC_SUBST([SCHEME_DEFS])
 AC_SUBST([SCHEME_LDFLAGS])
 AC_SUBST([LIARC_CFLAGS])
 AC_SUBST([LIARC_LDFLAGS])
-AC_SUBST([LIARC_LOADER])
+AC_SUBST([LIARC_CROSS_LDFLAGS])
+AC_SUBST([LIARC_TARGET_LDFLAGS])
 AC_SUBST_FILE([LIARC_VARS])
 AC_SUBST_FILE([LIARC_RULES])
 AC_SUBST([AUX_PROGRAMS])
@@ -931,6 +947,9 @@ AC_SUBST([EXE_NAME])
 AC_SUBST([INSTALL_INCLUDE])
 AC_SUBST([CCLD])
 AC_SUBST([HOST_CC])
+AC_SUBST([TARGET_CC])
+AC_SUBST([TARGET_CPPFLAGS])
+AC_SUBST([TARGET_LDFLAGS])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

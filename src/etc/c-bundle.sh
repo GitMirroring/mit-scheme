@@ -41,8 +41,8 @@ TYPE=${2}
 SYSTEM=${3}
 shift 3
 
-GEN_NONCE=${AUXDIR}/gen-nonce
-EXTRACT_DECLS=${AUXDIR}/extract-liarc-decls
+GEN_NONCE=${AUXDIR}/xgen-nonce
+EXTRACT_DECLS=${AUXDIR}/xextract-liarc-decls
 
 "${EXTRACT_DECLS}" ${1+"$@"} > "${SYSTEM}.h"
 

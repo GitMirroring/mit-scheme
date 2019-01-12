@@ -69,6 +69,7 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/microcode/mkinstalldirs
 
 CC = @CC@
 CCLD = @CCLD@
+AR = ar
 
 DEFS = @DEFS@
 CFLAGS = @CFLAGS@

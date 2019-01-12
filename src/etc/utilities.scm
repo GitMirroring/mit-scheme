@@ -41,6 +41,7 @@ USA.
 		       (write-string bundle port))
     (lambda ()
       (let ((names (bundle-files bundle))
+	    (a-file (string-append bundle ".a"))
 	    (so-file (string-append bundle ".so")))
 	(receive (script-dir include-dir)
 	    (cond ((eq? microcode-id/compiled-code-type 'C)
@@ -63,7 +64,7 @@ USA.
 		    (newline port)
 		    (write-rule port ".c.o")
 		    (write-command port
-				   (string-append "@" script-dir "/liarc-cc")
+				   (string-append "@" script-dir "/liarc-cross-cc")
 				   "$@"
 				   "$<"
 				   (string-append "-I" include-dir))
@@ -71,12 +72,15 @@ USA.
 		    (let ((init-root (string-append bundle "-init")))
 		      (write-rule port "compile-liarc-bundle" so-file)
 		      (newline port)
+		      (let ((prereqs (files+suffix names ".o")))
+			(write-rule port a-file prereqs)
+			(write-command port "$(AR)" "crs" "$@" prereqs))
 		      (let ((prereqs
 			     (cons (string-append init-root ".o")
-				   (files+suffix names ".o"))))
+				   (list a-file))))
 			(write-rule port so-file prereqs)
 			(write-command port
-				       (string-append "@" script-dir "/liarc-ld")
+				       (string-append "@" script-dir "/liarc-cross-ld")
 				       "$@"
 				       prereqs))
 		      (newline port)

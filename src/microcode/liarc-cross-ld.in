@@ -33,6 +33,6 @@ fi
 OUT=${1}
 shift
 
-CMD="@TARGET_CC@ @TARGET_LDFLAGS@ @LIARC_TARGET_LDFLAGS@ @LIARC_LDFLAGS@ -o ${OUT} ${@}"
+CMD="@CC@ @LDFLAGS@ @LIARC_CROSS_LDFLAGS@ @LIARC_LDFLAGS@ -o ${OUT} ${@}"
 echo "${CMD}"
 eval "${CMD}"

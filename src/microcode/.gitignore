@@ -7,6 +7,8 @@
 /findprim
 /gen-nonce
 /liarc-cc
+/liarc-cross-cc
+/liarc-cross-ld
 /liarc-ld
 /makegen-cc
 /scheme

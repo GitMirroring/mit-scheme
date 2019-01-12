@@ -47,20 +47,32 @@ clean ()
 
 trap clean EXIT INT TERM
 
-if [ ! -f config.h.in ]; then
+if [ ! config.h.in -nt configure.ac ]; then
     autoheader=clean
     echo "autoheader"
     autoheader
     autoheader=done
 fi
-if [ ! -x configure ]; then
+if [ ! configure -nt configure.ac ]; then
     autoconf=clean
     echo "autoconf"
     autoconf
     autoconf=done
 fi
 ( cd cmpauxmd && make ${1+"$@"} )
-if [ ! -f Makefile.in ]; then
+if ! [ Makefile.in -nt configure.ac \
+    -a Makefile.in -nt makegen/Makefile.in.in \
+    -a Makefile.in -nt makegen/bundles-liarc.scm \
+    -a Makefile.in -nt makegen/dirs-liarc.scm \
+    -a Makefile.in -nt makegen/files-core.scm \
+    -a Makefile.in -nt makegen/files-optional.scm \
+    -a Makefile.in -nt makegen/files-os-prim.scm \
+    -a Makefile.in -nt makegen/files-other.scm \
+    -a Makefile.in -nt makegen/files-unix.scm \
+    -a Makefile.in -nt makegen/liarc-base-rules \
+    -a Makefile.in -nt makegen/makeinit.sh \
+    -a Makefile.in -nt makegen/pkds-liarc.scm \
+    -a Makefile.in -nt ../etc/utilities.scm ]; then
     makeinit=clean
     makegen/makeinit.sh ${1+"$@"}
     makeinit=done

@@ -115,11 +115,11 @@ aux_LIBS =
 aux_DATA = @AUX_DATA@
 EXTRA_PROGRAMS = findprim
 
-scheme_SOURCES = $(STD_SOURCES) usrdef.c $(LIARC_SOURCES)
-scheme_OBJECTS = $(STD_OBJECTS) usrdef.o $(LIARC_OBJECTS)
+scheme_SOURCES = $(STD_SOURCES) usrdef.c
+scheme_OBJECTS = $(STD_OBJECTS) usrdef.o
 scheme_DEPENDENCIES = 
 scheme_LDFLAGS = @SCHEME_LDFLAGS@
-scheme_LIBS = $(LIBS)
+scheme_LIBS = $(LIBS) $(LIARC_LIBS)
 SCHEME_EXE = scheme
 
 findprim_SOURCES = findprim.c
@@ -177,7 +177,19 @@ findprim: $(findprim_OBJECTS) $(findprim_DEPENDENCIES)
 		$(findprim_LIBS)
 
 findprim.o: findprim.c config.h
-	$(HOST_CC) -o $@ $(findprim_CFLAGS) -c findprim.c
+	$(HOST_CC) -o $@ -c findprim.c
+
+xgen-nonce: xgen-nonce.o
+	$(HOST_CC) -o $@ xgen-nonce.o
+
+xgen-nonce.o: xgen-nonce.c
+	$(HOST_CC) -o $@ -c xgen-nonce.c
+
+xextract-liarc-decls: xextract-liarc-decls.o
+	$(HOST_CC) -o $@ xextract-liarc-decls.o
+
+xextract-liarc-decls.o: xextract-liarc-decls.c
+	$(HOST_CC) -o $@ -c xextract-liarc-decls.c
 
 gen-nonce: gen-nonce.o
 	$(LINK) gen-nonce.o
@@ -248,9 +260,7 @@ install-auxDATA: $(aux_DATA)
 install-include:
 	$(mkinstalldirs) $(DESTDIR)$(AUXDIR)
 	$(INSTALL_SCRIPT) liarc-cc $(DESTDIR)$(AUXDIR)/.
-	sed -e "s&^SCHEME_EXE=.*&SCHEME_EXE=$(bindir)/$(EXE_NAME)&" < liarc-ld > liarc-ld.install
-	$(INSTALL_SCRIPT) liarc-ld.install $(DESTDIR)$(AUXDIR)/liarc-ld
-	rm -f liarc-ld.install
+	$(INSTALL_SCRIPT) liarc-ld $(DESTDIR)$(AUXDIR)/.
 	$(mkinstalldirs) $(DESTDIR)$(AUXDIR)/include
 	$(INSTALL_DATA) *.h $(DESTDIR)$(AUXDIR)/include/.
 
