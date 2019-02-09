@@ -1339,7 +1339,7 @@ USA.
 
 (define-integrable (%substring-find-next-char-in-set string start end char-set)
   ((ucode-primitive substring-find-next-char-in-set)
-   string start end (char-set-table char-set)))
+   string start end (cached-char-set-table char-set)))
 
 (define (string-find-previous-char-in-set string char-set)
   (guarantee-string string 'STRING-FIND-PREVIOUS-CHAR-IN-SET)
@@ -1354,7 +1354,23 @@ USA.
 
 (define (%substring-find-previous-char-in-set string start end char-set)
   ((ucode-primitive substring-find-previous-char-in-set)
-   string start end (char-set-table char-set)))
+   string start end (cached-char-set-table char-set)))
+
+(define char-set-table-table
+  (make-weak-eq-hash-table))
+
+(define char-set-trace-port #f)
+
+(define (cached-char-set-table char-set)
+  (or (hash-table-ref char-set-table-table char-set (lambda () #f))
+      (let ((table (char-set-table char-set)))
+	(hash-table-set! char-set-table-table char-set table)
+	(cond (char-set-trace-port
+	       => (lambda (port)
+		    (call-with-current-continuation
+		      (lambda (k)
+			(stack-trace k port))))))
+	table)))
 
 ;;;; String search
 
