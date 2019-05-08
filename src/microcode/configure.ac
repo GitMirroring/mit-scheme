@@ -290,6 +290,7 @@ darwin*)
     fi
     MACOS_SDKS=
     for dir in /Developer/SDKs \
+    	/Library/Developer/CommandLineTools/SDKs \
     	/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs
     do
 	if test -d "${dir}"; then
