@@ -2087,6 +2087,11 @@ USA.
       string
       (string->utf8 string)))
 
+(define (string-from-primitive string)
+  (if (legacy-string? string)
+      (utf8->string (legacy-string->bytevector string))
+      string))
+
 (define-integrable (every-loop proc ref string start end)
   (let loop ((i start))
     (if (fix:< i end)
