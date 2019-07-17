@@ -1952,10 +1952,12 @@ USA.
   (export ()
 	  alist->bundle
 	  bundle->alist
+          bundle-delegate
 	  bundle-names
 	  bundle-predicate
 	  bundle-predicate?
 	  bundle-ref
+	  bundle-ref/default
 	  bundle?
 	  make-bundle-predicate))
 
