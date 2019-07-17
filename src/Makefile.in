@@ -90,6 +90,10 @@ HOST_COMPILER = '$(MIT_SCHEME_EXE)' --batch-mode $(HOST_COMPILER_HEAP) --no-init
 HOST_RUNTIME_ONLY = '$(MIT_SCHEME_EXE)' --batch-mode $(HOST_COMPILER_HEAP) \
   --band runtime.com --no-init-file --load runtime/host-adapter.scm
 
+HOST_SF_ONLY = '$(MIT_SCHEME_EXE)' --batch-mode $(HOST_COMPILER_HEAP) \
+  --band runtime.com --no-init-file --eval '(load-option (quote sf))' \
+  --load runtime/host-adapter.scm
+
 # This rule is for LIARC.
 .SUFFIXES: .bld .pkd .c
 .pkd.c .bld.c:
@@ -234,7 +238,7 @@ syntax-compiler: compile-sf
 	 echo '  (lambda ()' && \
 	 echo '    $(SF_SETTINGS_CROSS)' && \
 	 echo '    (load "compiler.sf")))') \
-	| $(HOST_RUNTIME_ONLY) --eval '(load-option (quote SF))'
+	| $(HOST_SF_ONLY)
 
 .PHONY: compile-compiler
 compile-compiler: syntax-compiler
