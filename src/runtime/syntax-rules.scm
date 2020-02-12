@@ -41,7 +41,6 @@ USA.
      (syntax-check '(_ (* identifier) * ((identifier . datum) expression)) form)
      (let ((keywords (cadr form))
 	   (clauses (cddr form)))
-<<<<<<< HEAD
        (if (let loop ((keywords keywords))
 	     (and (pair? keywords)
 		  (or (memq (car keywords) (cdr keywords))
@@ -69,62 +68,6 @@ USA.
 			     ,(loop (cdr clauses)))))
 		       `(,(rename 'begin)
 			 (,(rename 'ill-formed-syntax) ,r-form))))))))))))
-||||||| parent of 046291625... Don't close a compound identifier in syntax-rules.
-       (if (any-duplicates? keywords eq?)
-	   (syntax-error "Keywords list contains duplicates:" keywords))
-       (let ((r-form (new-identifier 'form))
-	     (r-rename (new-identifier 'rename))
-	     (r-compare (new-identifier 'compare)))
-	 `(,(rename 'er-macro-transformer)
-	   (,(rename 'lambda)
-	    (,r-form ,r-rename ,r-compare)
-	    (,(rename 'declare) (ignorable ,r-rename ,r-compare))
-	    ,(let loop ((clauses clauses))
-	       (if (pair? clauses)
-		   (let ((pattern (caar clauses)))
-		     (let ((sids
-			    (parse-pattern rename compare keywords
-					   pattern r-form)))
-		       `(,(rename 'if)
-			 ,(generate-match rename compare keywords
-					  r-rename r-compare
-					  pattern r-form)
-			 ,(generate-output rename compare r-rename
-					   sids (cadar clauses))
-			 ,(loop (cdr clauses)))))
-		   `(,(rename 'begin)
-		     (,(rename 'ill-formed-syntax)
-		      (,(rename 'quote) ,r-form))))))))))))
-=======
-       (if (any-duplicates? keywords eq?)
-	   (syntax-error "Keywords list contains duplicates:" keywords))
-       (let ((r-form (new-identifier 'form))
-	     (rr-rename (new-identifier 'rename))
-	     (r-rename (new-identifier 'rename))
-	     (r-compare (new-identifier 'compare)))
-	 `(,(rename 'er-macro-transformer)
-	   (,(rename 'lambda)
-	    (,r-form ,rr-rename ,r-compare)
-	    (,(rename 'let)
-	     ((,r-rename
-	       (,(rename 'lambda) (id)
-		(,rr-rename (,(rename 'identifier->symbol) id)))))
-	     (,(rename 'declare) (ignorable ,r-rename ,r-compare))
-	     ,(let loop ((clauses clauses))
-		(if (pair? clauses)
-		    (let ((pattern (caar clauses)))
-		      (let ((sids
-			     (parse-pattern rename compare keywords
-					    pattern r-form)))
-			`(,(rename 'if)
-			  ,(generate-match rename compare keywords
-					   r-rename r-compare
-					   pattern r-form)
-			  ,(generate-output rename compare r-rename
-					    sids (cadar clauses))
-			  ,(loop (cdr clauses)))))
-		    `(,(rename 'ill-formed-syntax) ,r-form)))))))))))
->>>>>>> 046291625... Don't close a compound identifier in syntax-rules.
 
 (define (parse-pattern rename compare keywords pattern expression)
   (let loop
