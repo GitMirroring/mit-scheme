@@ -52,8 +52,8 @@ if test x"${enable_html}" = xno; then
 elif test x"${enable_html}" != xyes; then
     htmldir=${enable_html}
 fi
-test x"${htmldir}" = x || TARGETS="${TARGETS} \$(TARGET_ROOT)/index.html"
-test x"${htmldir}" = x || INST_TARGETS="${INST_TARGETS} install-html"
+test x"${htmldir}" = x || TARGETS="${TARGETS} \$(TARGET_ROOT).html \$(TARGET_ROOT)/index.html"
+test x"${htmldir}" = x || INST_TARGETS="${INST_TARGETS} install-html install-html-nosplit"
 
 AC_ARG_ENABLE([pdf],
     [AC_HELP_STRING([--enable-pdf],
