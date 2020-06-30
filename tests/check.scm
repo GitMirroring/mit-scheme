@@ -92,6 +92,7 @@ USA.
     "runtime/test-optional"
     "runtime/test-optional.bin"
     "runtime/test-optional.com"
+    "runtime/test-os-env"
     ("runtime/test-parametric-predicate" (runtime parametric-predicate))
     "runtime/test-pp"
     "runtime/test-predicate"
