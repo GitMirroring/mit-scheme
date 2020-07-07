@@ -1,0 +1,5 @@
+MIT Scheme now uses /tmp as the default temporary directory, not /var/tmp.
+
+/var/tmp is conventionally for temporary files that are persistent
+across reboot, e.g. vi recovery files, not for temporary files that we
+have no use for after a reboot.
