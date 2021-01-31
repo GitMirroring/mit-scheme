@@ -42,7 +42,7 @@ USA.
 
 (add-boot-init!
  (lambda ()
-   (add-subsystem-identification! "Release" '(11 0 91))
+   (add-subsystem-identification! "Release" '(11 1))
    (run-now-and-after-restore!
     (lambda ()
       (add-subsystem-identification! "Microcode" (get-microcode-version))))
