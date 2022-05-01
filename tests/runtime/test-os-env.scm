@@ -46,25 +46,21 @@ USA.
 
 (define-test 'list-smoke
   (lambda ()
-    (expect-error
-     (lambda ()
-       (get-environment-variables)))))
+    (get-environment-variables)))
 
 (define-test 'set-list-assoc
   (lambda ()
-    (expect-error
-     (lambda ()
-       (let* ((var "FOOBAR")
-	      (val "MUMBLEFROTZ")
-	      (old (get-environment-variable var)))
-	 (dynamic-wind
-	   (lambda () 0)
-	   (lambda ()
-	     (set-environment-variable! var val)
-	     (assert-equal (assoc var (get-environment-variables))
-			   (cons var val))
-	     0)
-	   (lambda ()
-	     (if old
-		 (set-environment-variable! var old)
-		 (delete-environment-variable! var)))))))))
+    (let* ((var "FOOBAR")
+	   (val "MUMBLEFROTZ")
+	   (old (get-environment-variable var)))
+      (dynamic-wind
+	(lambda () 0)
+	(lambda ()
+	  (set-environment-variable! var val)
+	  (assert-equal (assoc var (get-environment-variables))
+			(cons var val))
+	  0)
+	(lambda ()
+	  (if old
+	      (set-environment-variable! var old)
+	      (delete-environment-variable! var)))))))

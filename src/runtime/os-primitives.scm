@@ -54,7 +54,7 @@ USA.
 				      (cons (cons name value) result)
 				      result))
 				'())))
-	  (sort entries string<? car))))))
+	  (sort entries (lambda (a b) (string<? (car a) (car b)))))))))
 
 (define (set-environment-variable! name value)
   (guarantee string? name 'set-environment-variable!)
