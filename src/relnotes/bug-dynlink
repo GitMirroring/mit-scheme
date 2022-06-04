@@ -1,0 +1,19 @@
+Bug fix: The compiler miscompiled certain procedures requiring a
+dynamic link on the stack, starting in the 11.x series.  For example:
+
+  (define (rexists pred thing)
+    (let tlp ((thing thing))
+      (cond ((pred thing) #t)
+	    ((vector? thing)
+	     (let ((n (vector-length thing)))
+	       (let lp ((i 0))
+		 (cond ((fix:= i n) #f)
+		       ((tlp (vector-ref thing i)) #t) ;(*)
+		       (else (lp (fix:+ i 1)))))))
+	    ((pair? thing)
+	     (any tlp thing))
+	    (else #f))))
+
+The code generator mistakenly clobbered the return value register in
+the continuation of the recursive call to `tlp' on the line marked (*)
+so the branch was never taken.
