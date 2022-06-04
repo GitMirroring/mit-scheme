@@ -1,0 +1,3 @@
+Bug fix: The prototype and definition of chacha_core disagreed in a
+formerly insignificant way in the microcode, causing a compiler error
+with some newer C compilers.  They have now been changed to agree.
