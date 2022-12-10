@@ -63,6 +63,7 @@ USA.
 #include "object.h"
 #include "outf.h"
 #include "gccode.h"
+#include "wx.h"
 
 /* For ephemeron layout.  */
 #include "sdata.h"
@@ -81,6 +82,10 @@ static SCHEME_OBJECT * tospace_end;
 static SCHEME_OBJECT * newspace_start;
 static SCHEME_OBJECT * newspace_next;
 static SCHEME_OBJECT * newspace_end;
+
+#ifndef WX_ALLOWED
+static void * xcc_queue;
+#endif
 
 gc_table_t * current_gc_table;
 static SCHEME_OBJECT * current_scan;
@@ -361,6 +366,7 @@ initialize_gc_table (gc_table_t * table, bool transport_p)
   (GCT_ENTRY (table, TC_COMPILED_CODE_BLOCK)) = gc_handle_aligned_vector;
   (GCT_TUPLE (table)) = gc_tuple;
   (GCT_VECTOR (table)) = gc_vector;
+  (GCT_CC_BLOCK (table)) = gc_cc_block;
   (GCT_CC_ENTRY (table)) = gc_cc_entry;
   (GCT_CC_RETURN (table)) = gc_cc_return;
   if (transport_p)
@@ -418,27 +424,57 @@ gc_scan_tospace (SCHEME_OBJECT * scan, SCHEME_OBJECT * end)
     }
 }
 
+static inline SCHEME_OBJECT *
+run_gc_step (SCHEME_OBJECT * scan, gc_ignore_object_p_t * ignore_object_p)
+{
+  SCHEME_OBJECT object = (*scan);
+  HANDLE_GC_TRAP (scan, object);
+  if ((ignore_object_p != 0) && ((*ignore_object_p) (object)))
+    scan += 1;
+  else
+    {
+      current_scan = scan;
+      current_object = object;
+      scan
+	= ((* (GCT_ENTRY (current_gc_table, (OBJECT_TYPE (object)))))
+	   (scan, object));
+    }
+  return (scan);
+}
+
 static void
 run_gc_loop (SCHEME_OBJECT * scan, SCHEME_OBJECT ** pend)
 {
   gc_ignore_object_p_t * ignore_object_p
     = (GCT_IGNORE_OBJECT_P (current_gc_table));
+  bool changed;
+
   INITIALIZE_GC_HISTORY ();
-  while (scan < (*pend))
+  do
     {
-      SCHEME_OBJECT object = (*scan);
-      HANDLE_GC_TRAP (scan, object);
-      if ((ignore_object_p != 0) && ((*ignore_object_p) (object)))
-	scan += 1;
-      else
+      while (scan < (*pend))
 	{
-	  current_scan = scan;
-	  current_object = object;
-	  scan
-	    = ((* (GCT_ENTRY (current_gc_table, (OBJECT_TYPE (object)))))
-	       (scan, object));
+	  scan = (run_gc_step (scan, ignore_object_p));
+	  changed = true;
 	}
+#ifndef WX_ALLOWED
+      {
+	struct xccblock * xccblock;
+	void * block;
+	while ((xccblock = (pop_xccblock_rw ((&xcc_queue), (&block)))) != NULL)
+	  {
+	    SCHEME_OBJECT * bstart = block;
+	    SCHEME_OBJECT * bend = (bstart + (OBJECT_DATUM (*bstart)));
+	    while (bstart < bend)
+	      bstart = (run_gc_step (bstart, ignore_object_p));
+	    assert (bstart == bend);
+	    commit_xccblock_rx (xccblock);
+	    changed = true;
+	  }
+      }
+#endif
     }
+  while (changed);
 }
 
 DEFINE_GC_TUPLE_HANDLER (gc_tuple)
@@ -461,7 +497,6 @@ DEFINE_GC_TUPLE_HANDLER (gc_tuple)
       (OBJECT_NEW_ADDRESS(tuple, new_address));
 }
 
-
 DEFINE_GC_VECTOR_HANDLER (gc_vector)
 {
   SCHEME_OBJECT * from = (OBJECT_ADDRESS (vector));
@@ -475,11 +510,26 @@ DEFINE_GC_VECTOR_HANDLER (gc_vector)
 						 align_p)))));
 }
 
+DEFINE_GC_OBJECT_HANDLER (gc_cc_block)
+{
+#ifdef CC_SUPPORT_PO
+#ifdef WX_ALLOWED
+  return (gc_vector (object, /*align_p*/true));
+#else
+  mark_xccblock ((OBJECT_ADDRESS (object)), (&xcc_queue));
+  return (object);
+#endif
+#else
+  gc_no_cc_support ();
+  return (object);
+#endif
+}
+
 DEFINE_GC_OBJECT_HANDLER (gc_cc_entry)
 {
 #ifdef CC_SUPPORT_P
   SCHEME_OBJECT old_block = (cc_entry_to_block (object));
-  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true));
+  SCHEME_OBJECT new_block = (GC_HANDLE_CC_BLOCK (old_block));
   return (CC_ENTRY_NEW_BLOCK (object,
 			      (OBJECT_ADDRESS (new_block)),
 			      (OBJECT_ADDRESS (old_block))));
@@ -493,7 +543,7 @@ DEFINE_GC_OBJECT_HANDLER (gc_cc_return)
 {
 #ifdef CC_SUPPORT_P
   SCHEME_OBJECT old_block = (cc_return_to_block (object));
-  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true));
+  SCHEME_OBJECT new_block = (GC_HANDLE_CC_BLOCK (old_block));
   return (CC_RETURN_NEW_BLOCK (object,
 			       (OBJECT_ADDRESS (new_block)),
 			       (OBJECT_ADDRESS (old_block))));

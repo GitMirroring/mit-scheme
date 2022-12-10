@@ -493,6 +493,8 @@ static const char * syscall_names_table [] =
   "utime",
   "vfork",
   "write",
+  "mmap",
+  "mprotect",
 };
 
 void

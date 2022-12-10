@@ -253,6 +253,34 @@ liarc_object_file_prefix (void)
 }
 
 
+DEFINE_PRIMITIVE ("MAP-COMPILED-CODE-BLOCK",
+		  Prim_map_compiled_code_block, 1, 1,
+  "Map a newly compiled code block into executable memory.")
+{
+  PRIMITIVE_HEADER (1);
+  {
+    SCHEME_OBJECT cc_block = (ARG_REF (1));
+
+    if (!CC_BLOCK_P (cc_block))
+      error_wrong_type_arg (1);
+
+#ifndef WX_ALLOWED
+    {
+      unsigned long nwords;
+      SCHEME_OBJECT * old_ptr;
+      uintptr_t new_addr;
+
+      old_ptr = (OBJECT_ADDRESS (cc_block));
+      nwords = (1 + (OBJECT_DATUM (*old_ptr)));
+      new_addr = (cons_xccblock (old_ptr, (nwords * (sizeof (*old_ptr)))));
+      cc_block = (OBJECT_NEW_ADDRESS (cc_block, new_addr));
+    }
+#endif
+
+    PRIMITIVE_RETURN (cc_block);
+  }
+}
+
 DEFINE_PRIMITIVE ("DECLARE-COMPILED-CODE-BLOCK",
 		  Prim_declare_compiled_code_block, 1, 1,
   "Ensure cache coherence for a compiled-code block newly constructed.")

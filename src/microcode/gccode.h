@@ -100,6 +100,7 @@ typedef struct
   gc_handler_t * handlers [N_TYPE_CODES];
   gc_tuple_handler_t * tuple_handler;
   gc_vector_handler_t * vector_handler;
+  gc_object_handler_t * cc_block_handler;
   gc_object_handler_t * cc_entry_handler;
   gc_object_handler_t * cc_return_handler;
   gc_precheck_from_t * precheck_from;
@@ -114,6 +115,7 @@ typedef struct
 #define GCT_ENTRY(table, type) (((table)->handlers) [(type)])
 #define GCT_TUPLE(table) ((table)->tuple_handler)
 #define GCT_VECTOR(table) ((table)->vector_handler)
+#define GCT_CC_BLOCK(table) ((table)->cc_block_handler)
 #define GCT_CC_ENTRY(table) ((table)->cc_entry_handler)
 #define GCT_CC_RETURN(table) ((table)->cc_return_handler)
 #define GCT_PRECHECK_FROM(table) ((table)->precheck_from)
@@ -129,6 +131,9 @@ typedef struct
 
 #define GC_HANDLE_VECTOR(object, align_p)				\
   ((* (GCT_VECTOR (current_gc_table))) ((object), (align_p)))
+
+#define GC_HANDLE_CC_BLOCK(object)					\
+  ((* (GCT_CC_BLOCK (current_gc_table))) (object))
 
 #define GC_HANDLE_CC_ENTRY(object)					\
   ((* (GCT_CC_ENTRY (current_gc_table))) (object))
@@ -176,6 +181,7 @@ extern gc_handler_t gc_handle_undefined;
 
 extern gc_tuple_handler_t gc_tuple;
 extern gc_vector_handler_t gc_vector;
+extern gc_object_handler_t gc_cc_block;
 extern gc_object_handler_t gc_cc_entry;
 extern gc_object_handler_t gc_cc_return;
 extern gc_precheck_from_t gc_precheck_from;

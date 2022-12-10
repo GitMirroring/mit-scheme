@@ -62,6 +62,7 @@ object_in_constant_space_p (SCHEME_OBJECT object)
   return ((address != 0) && (ADDRESS_IN_CONSTANT_P (address)));
 }
 
+#ifdef WX_ALLOWED
 SCHEME_OBJECT *
 copy_to_constant_space (SCHEME_OBJECT * source, unsigned long n_words)
 {
@@ -79,3 +80,4 @@ copy_to_constant_space (SCHEME_OBJECT * source, unsigned long n_words)
     (*constant_alloc_next++) = (*source++);
   return (result);
 }
+#endif

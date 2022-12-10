@@ -491,6 +491,7 @@ relocate_block_table (void)
 
       (GCT_TUPLE (&table)) = fasload_tuple;
       (GCT_VECTOR (&table)) = fasload_vector;
+      (GCT_CC_BLOCK (&table)) = fasload_cc_block;
       (GCT_CC_ENTRY (&table)) = fasload_cc_entry;
       (GCT_CC_RETURN (&table)) = fasload_cc_return;
       (GCT_RAW_ADDRESS_TO_OBJECT (&table)) = fasload_raw_address_to_object;
@@ -552,7 +553,7 @@ DEFINE_GC_VECTOR_HANDLER (fasload_vector)
 }
 
 static
-DEFINE_GC_OBJECT_HANDLER (fasload_cc_entry)
+DEFINE_GC_OBJECT_HANDLER (fasload_cc_block)
 {
 #ifdef CC_SUPPORT_P
   return
@@ -564,12 +565,54 @@ DEFINE_GC_OBJECT_HANDLER (fasload_cc_entry)
 }
 
 static
+DEFINE_GC_OBJECT_HANDLER (fasload_cc_entry)
+{
+#ifdef CC_SUPPORT_P
+  insn_t * addr = (relocate_address (OLD_CC_ADDRESS (object)));
+  SCHEME_OBJECT entry = (CC_ENTRY_NEW_ADDRESS (object, addr));
+#ifndef WX_ALLOWED
+  SCHEME_OBJECT * oblock = (cc_entry_to_block_address (entry));
+  SCHEME_OBJECT * nblock;
+  if (BROKEN_HEART_P (*block))
+    {
+      nblock = ((SCHEME_OBJECT *) (OBJECT_ADDRESS (*oblock)));
+    }
+  else
+    {
+      unsigned long nwords = (1 + (OBJECT_DATUM (*block)));
+      nblock = (cons_xccblock (block, (nwords * (sizeof (*oblock)))));
+      (*block) = (MAKE_BROKEN_HEART (nblock));
+    }
+  entry = (CC_ENTRY_NEW_BLOCK (entry, nblock, oblock));
+#endif
+  return (entry);
+#else
+  return (object);
+#endif
+}
+
+static
 DEFINE_GC_OBJECT_HANDLER (fasload_cc_return)
 {
 #ifdef CC_SUPPORT_P
-  return
-    (CC_RETURN_NEW_ADDRESS (object,
-			    (relocate_address (OLD_CC_RETURN (object)))));
+  insn_t * addr = (relocate_address (OLD_CC_ADDRESS (object)));
+  SCHEME_OBJECT ret = (CC_RETURN_NEW_ADDRESS (object, addr));
+#ifndef WX_ALLOWED
+  SCHEME_OBJECT * oblock = (cc_return_to_block_address (ret));
+  SCHEME_OBJECT * nblock;
+  if (BROKEN_HEART_P (*block))
+    {
+      nblock = ((SCHEME_OBJECT *) (OBJECT_ADDRESS (*block));)
+    }
+  else
+    {
+      unsigned long nwords = (1 + (OBJECT_DATUM (*block)));
+      nblock = (cons_xccblock (block, (nwords * (sizeof (*oblock)))));
+      (*block) = (MAKE_BROKEN_HEART (nblock));
+    }
+  ret = (CC_RETURN_NEW_BLOCK (ret, nblock, oblock));
+#endif
+  return (ret);
 #else
   return (object);
 #endif
@@ -636,7 +679,9 @@ intern_block_table (void)
 
       (GCT_TUPLE (&table)) = intern_tuple;
       (GCT_VECTOR (&table)) = intern_vector;
+      (GCT_CC_BLOCK (&table)) = intern_cc_block;
       (GCT_CC_ENTRY (&table)) = intern_cc_entry;
+      (GCT_CC_RETURN (&table)) = intern_cc_return;
 
       (GCT_ENTRY ((&table), TC_WEAK_CONS)) = gc_handle_pair;
       (GCT_ENTRY ((&table), TC_EPHEMERON)) = gc_handle_unaligned_vector;

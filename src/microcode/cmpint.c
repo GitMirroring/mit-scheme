@@ -395,7 +395,11 @@ make_compiler_utilities (void)
     (store[1]) = ((trampoline_entry_addr (block, 1)) - ((insn_t *) block));
   }
 
+#ifdef WX_ALLOWED
   block = (copy_to_constant_space (block, n_words));
+#else
+  block = (cons_xccblock (block, (n_words * (sizeof (*block)))));
+#endif
   return (MAKE_CC_BLOCK (block));
 }
 
@@ -2631,6 +2635,9 @@ make_trampoline (SCHEME_OBJECT * slot,
       }
     va_end (ap);
   }
+#ifndef WX_ALLOWED
+  block = (cons_xccblock (block, (n_words * (sizeof (*block)))));
+#endif
   (*slot) = (MAKE_CC_ENTRY (trampoline_entry_addr (block, 0)));
   return (PRIM_DONE);
 }

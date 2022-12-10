@@ -112,6 +112,8 @@ enum syscall_names
   syscall_utime,
   syscall_vfork,
   syscall_write,
+  syscall_mmap,
+  syscall_mprotect,
 };
 
 enum syserr_names
