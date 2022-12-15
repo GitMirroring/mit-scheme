@@ -54,6 +54,7 @@ cleanup_file "${PROJECT_NAME}"
 
 generate_changelog ()
 {
+    my_rm_f ../"${CHANGELOG}"
     git log --name-status > ../"${CHANGELOG}"
     make_read_only ../"${CHANGELOG}"
 }
