@@ -264,6 +264,27 @@ termination_signal (const char * signal_name)
 }
 
 static void
+bind_interpreter_state (interpreter_state_t* s, ictx_t* ic)
+{
+  s->previous_state = interpreter_state (ic);
+  s->nesting_level = interpreter_nesting_level (ic);
+  s->dstack_position = interpreter_dstack_position (ic);
+  ic->state = s;
+}
+
+void
+unbind_interpreter_state (interpreter_state_t* s, ictx_t* ic)
+{
+  {
+    unsigned long old_mask = GET_INT_MASK;
+    SET_INTERRUPT_MASK (0);
+    dstack_set_position (s->dstack_position);
+    SET_INTERRUPT_MASK (old_mask);
+  }
+  ic->state = s->previous_state;
+}
+
+static void
 edwin_auto_save (void)
 {
   static SCHEME_OBJECT position;

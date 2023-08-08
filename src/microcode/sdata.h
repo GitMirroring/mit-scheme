@@ -154,9 +154,6 @@ USA.
 #define STACK_ENV_FUNCTION      1
 #define STACK_ENV_FIRST_ARG     2
 
-#define STACK_COMB_FINGER       0
-#define STACK_COMB_FIRST_ARG    1
-
 /* An environment chain always ends in a pointer with type code
    of GLOBAL_ENV.  This will contain an address part which
    either indicates that the lookup should continue on to the

@@ -41,7 +41,7 @@ USA.
 #define ERR_IN_SYSTEM_CALL			0x04
 #define ERR_WITH_ARGUMENT			0x05
 #define ERR_BAD_FRAME				0x06
-/* #define ERR_BROKEN_COMPILED_VARIABLE		0x07 */
+#define ERR_UNKNOWN_RC				0x07
 /* #define ERR_UNDEFINED_USER_TYPE		0x08 */
 #define ERR_UNDEFINED_PRIMITIVE			0x09
 #define ERR_EXTERNAL_RETURN			0x0A
@@ -112,7 +112,7 @@ USA.
 /* 0x04 */		"system-call",					\
 /* 0x05 */		"error-with-argument",				\
 /* 0x06 */		"bad-frame",					\
-/* 0x07 */		0,						\
+/* 0x07 */		"unknown-return-code",				\
 /* 0x08 */		0,						\
 /* 0x09 */		"undefined-primitive-operation",		\
 /* 0x0a */		"external-return",				\

@@ -35,121 +35,118 @@ USA.
    interpreter.  This file should parallel the file SCODE.SCM in the
    runtime system.  The interpreter dispatches on the type code of a
    pointer to determine what operation to perform.  The format of the
-   storage block this points to is described below.  Offsets are the
-   number of cells from the location pointed to by the operation. */
+   storage block this points to is described below. */
 
 /* ALPHABETICALLY LISTED BY TYPE CODE NAME */
 
-/* ACCESS operation: */
-#define ACCESS_ENVIRONMENT	0
-#define ACCESS_NAME		1
+static inline SCHEME_OBJECT
+_memory_ref_0 (SCHEME_OBJECT exp)
+{
+  return MEMORY_REF (exp, 0);
+}
 
-/* ASSIGNMENT operation: */
-#define ASSIGN_NAME		0
-#define ASSIGN_VALUE		1
+static inline SCHEME_OBJECT
+_memory_ref_1 (SCHEME_OBJECT exp)
+{
+  return MEMORY_REF (exp, 1);
+}
 
-/* COMBINATIONS are vector-like: */
-#define COMB_VECTOR_HEADER	0
-#define COMB_FN_SLOT		1
-#define COMB_ARG_1_SLOT		2
+static inline SCHEME_OBJECT
+_memory_ref_2 (SCHEME_OBJECT exp)
+{
+  return MEMORY_REF (exp, 2);
+}
 
-/* COMMENT operation: */
-#define COMMENT_EXPRESSION	0
-#define COMMENT_TEXT		1
+#define access_environment _memory_ref_0
+#define access_name _memory_ref_1
 
-/* CONDITIONAL operation (used for COND, IF, AND): */
-#define COND_PREDICATE		0
-#define COND_CONSEQUENT		1
-#define COND_ALTERNATIVE	2
+#define assignment_name _memory_ref_0
+#define assignment_value _memory_ref_1
+
+#define combination_header _memory_ref_0
+#define combination_operator _memory_ref_1
+
+static inline unsigned long
+combination_size (SCHEME_OBJECT exp)
+{
+  return OBJECT_DATUM (combination_header (exp));
+}
+
+static inline SCHEME_OBJECT*
+combination_exprs (SCHEME_OBJECT exp)
+{
+  return MEMORY_LOC (exp, 1);
+}
+
+static inline SCHEME_OBJECT
+combination_expr (SCHEME_OBJECT exp, unsigned long n)
+{
+  return VECTOR_REF (exp, n);
+}
+
+#define comment_expression _memory_ref_0
+#define comment_text _memory_ref_1
+
+#define conditional_predicate _memory_ref_0
+#define conditional_consequent _memory_ref_1
+#define conditional_alternative _memory_ref_2
+
+#define definition_name _memory_ref_0
+#define definition_value _memory_ref_1
+
+#define delay_object _memory_ref_0
+
+#define disjunction_predicate _memory_ref_0
+#define disjunction_alternative _memory_ref_1
 
-/* DEFINITION operation: */
-#define DEFINE_NAME		0
-#define DEFINE_VALUE		1
+#define elambda_body _memory_ref_0
+#define elambda_names _memory_ref_1
+#define elambda_arg_counts _memory_ref_2
 
-/* DELAY operation: */
-#define DELAY_OBJECT		0
-#define DELAY_UNUSED		1
+static inline unsigned long
+elambda_reqs (SCHEME_OBJECT exp)
+{
+  return (elambda_arg_counts (exp) >> 8) & 0xFF;
+}
 
-/* DISJUNCTION or OR operation: */
-#define OR_PREDICATE		0
-#define OR_ALTERNATIVE		1
+static inline unsigned long
+elambda_opts (SCHEME_OBJECT exp)
+{
+  return elambda_arg_counts (exp) & 0xFF;
+}
 
-/* EXTENDED_LAMBDA operation:
- * Support for optional parameters and auxiliary local variables.  The
- * Extended Lambda is similar to LAMBDA, except that it has an extra
- * word called the ARG_COUNT.  This contains an 8-bit count of the
- * number of optional arguments, an 8-bit count of the number of
- * required (formal) parameters, and a bit to indicate that additional
- * (rest) arguments are allowed.  The vector of argument names
- * contains, of course, a size count which allows the calculation of
- * the number of auxiliary variables required.  Auxiliary variables
- * are created for any internal DEFINEs which are found at syntax time
- * in the body of a LAMBDA-like special form.
- */
+static inline unsigned long
+elambda_rest (SCHEME_OBJECT exp)
+{
+  return (elambda_arg_counts (exp) >> 16) & 0x1;
+}
 
-#define ELAMBDA_SCODE      0
-#define ELAMBDA_NAMES      1
-#define ELAMBDA_ARG_COUNT  2
+#define lambda_body _memory_ref_0
+#define lambda_names _memory_ref_1
 
-/* Masks.  The infomation on the number of each type of argument is
- * separated at byte boundaries for easy extraction in the 68000 code.
- */
+static inline SCHEME_OBJECT*
+lambda_params (SCHEME_OBJECT exp)
+{
+  return VECTOR_LOC (lambda_names (exp), 1);
+}
 
-#define EL_OPTS_MASK		0xFF
-#define EL_FORMALS_MASK		0xFF00
-#define EL_REST_MASK		0x10000
-#define EL_FORMALS_SHIFT	8
-#define EL_REST_SHIFT		16
+static inline unsigned long
+lambda_n_params (SCHEME_OBJECT exp)
+{
+  return VECTOR_LENGTH (lambda_names (exp), 1) - 1;
+}
 
-/* Selectors */
+#define scode_quote_object _memory_ref_0
 
-#define Get_Body_Elambda(Addr)  (MEMORY_REF (Addr, ELAMBDA_SCODE))
-#define Get_Names_Elambda(Addr) (MEMORY_REF (Addr, ELAMBDA_NAMES))
-#define Get_Count_Elambda(Addr) (MEMORY_REF (Addr, ELAMBDA_ARG_COUNT))
-#define Elambda_Formals_Count(Addr) \
-     ((((long) Addr) & EL_FORMALS_MASK) >> EL_FORMALS_SHIFT)
-#define Elambda_Opts_Count(Addr) \
-     (((long) Addr) & EL_OPTS_MASK)
-#define Elambda_Rest_Flag(Addr) \
-     ((((long) Addr) & EL_REST_MASK) >> EL_REST_SHIFT)
-
-/* LAMBDA operation:
- * Object representing a LAMBDA expression with a fixed number of
- * arguments.  It consists of a list of the names of the arguments
- * (the first is the name by which the procedure refers to itself) and
- * the SCode for the procedure.
- */
+#define sequence_1 _memory_ref_0
+#define sequence_2 _memory_ref_1
 
-#define LAMBDA_SCODE		0
-#define LAMBDA_FORMALS		1
+#define variable_name _memory_ref_0
 
-#define GET_LAMBDA_FORMALS(lambda)					\
-  (MEMORY_REF ((lambda), LAMBDA_FORMALS))
-
-#define GET_LAMBDA_PARAMETERS(lambda)					\
-  (MEMORY_LOC ((GET_LAMBDA_FORMALS (lambda)), (VECTOR_DATA + 1)))
-
-#define GET_LAMBDA_N_PARAMETERS(lambda)					\
-  ((VECTOR_LENGTH (GET_LAMBDA_FORMALS (lambda))) - 1)
-
-/* LEXPR
- * Same as LAMBDA (q.v.) except additional arguments are permitted
- * beyond those indicated in the LAMBDA_FORMALS list.
- */
-
-/* SCODE_QUOTE returns itself */
-#define SCODE_QUOTE_OBJECT	0
-#define SCODE_QUOTE_IGNORED	1
-
-/* SEQUENCE operations */
-#define SEQUENCE_1		0
-#define SEQUENCE_2		1
-
-/* VARIABLE operation.
- * Corresponds to a variable lookup or variable reference. Contains the
- * symbol referenced
- */
-#define VARIABLE_SYMBOL(variable) (MEMORY_REF ((variable), 0))
-#define VARIABLE_SAFE_P(variable) ((MEMORY_REF ((variable), 1)) == SHARP_F)
+static inline bool
+variable_safe_p (SCHEME_OBJECT exp)
+{
+  return _memory_ref_1 (exp) == SHARP_F;
+}
 
 #endif /* not SCM_SCODE_H */
