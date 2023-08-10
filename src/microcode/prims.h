@@ -86,8 +86,8 @@ SCHEME_OBJECT fn_name (ictx_t* ictx)
     error_wrong_type_arg (argument);					\
 } while (0)
 
-#define ARG_LOC(argument) (stack_loc (argument - 1, ictx))
-#define ARG_REF(argument) (stack_ref (argument - 1, ictx))
+#define ARG_LOC(argument) (stack_loc (argument - 1, get_ictx ()))
+#define ARG_REF(argument) (stack_ref (argument - 1, get_ictx ()))
 
 extern void signal_error_from_primitive (long) NORETURN;
 extern void signal_interrupt_from_primitive (void) NORETURN;

@@ -118,6 +118,15 @@ USA.
 
 #define entity_operator memory_ref_0
 #define entity_data memory_ref_1
+
+
+/* PROCEDURE and EXTENDED_PROCEDURE
+ * Consists of two parts: a LAMBDA expression and the environment
+ * in which the LAMBDA was evaluated to yield the PROCEDURE.
+ */
+
+#define procedure_lambda memory_ref_0
+#define procedure_environment memory_ref_1
 
 /* ENVIRONMENT
  * Associates identifiers with values.
@@ -146,9 +155,10 @@ USA.
  * corresponds to the structure described above.
  */
 
-#define ENVIRONMENT_HEADER	0
-#define ENVIRONMENT_FUNCTION	1
-#define ENVIRONMENT_FIRST_ARG	2
+#define env_header memory_ref_0
+#define env_proc memory_ref_1
+#define set_env_extension memory_ref_1
+#define env_vals memory_loc_2
 
 #define STACK_ENV_EXTRA_SLOTS   1
 #define STACK_ENV_HEADER        0
@@ -171,17 +181,17 @@ USA.
 #define NULL_FRAME_P(frame) ((frame) == THE_NULL_ENV)
 #define PROCEDURE_FRAME_P(frame) ((OBJECT_TYPE (frame)) == TC_ENVIRONMENT)
 
-#define GET_FRAME_PARENT(frame)						\
-  (GET_PROCEDURE_ENVIRONMENT (GET_FRAME_PROCEDURE (frame)))
+static inline SCHEME_OBJECT
+env_parent (SCHEME_OBJECT env)
+{
+  return procedure_environment (env_proc (env));
+}
 
-#define GET_FRAME_PROCEDURE(frame)					\
-  (MEMORY_REF ((frame), ENVIRONMENT_FUNCTION))
-
-#define SET_FRAME_EXTENSION(frame, extension)				\
-  MEMORY_SET ((frame), ENVIRONMENT_FUNCTION, (extension))
-
-#define GET_FRAME_ARG_CELL(frame, index)				\
-  (MEMORY_LOC ((frame), (ENVIRONMENT_FIRST_ARG + (index))))
+static inline SCHEME_OBJECT*
+env_val_cell (SCHEME_OBJECT env, unsigned long index)
+{
+  return env_vals (env) + index;
+}
 
 /* Environment extension objects:
 
@@ -197,63 +207,75 @@ USA.
    where a new extension object is consed in extend_frame.
  */
 
-#define ENV_EXTENSION_HEADER		0
-#define ENV_EXTENSION_PARENT_FRAME	1
-#define ENV_EXTENSION_PROCEDURE		2
-#define ENV_EXTENSION_COUNT		3
-#define ENV_EXTENSION_MIN_SIZE		4
-
-#define EXTENDED_FRAME_P(frame)						\
-  (FRAME_EXTENSION_P (GET_FRAME_PROCEDURE (frame)))
-
 #define FRAME_EXTENSION_P VECTOR_P
+#define env_extension_parent vector_ref_0
+#define set_env_extension_parent vector_set_0
+#define env_extension_proc vector_ref_1
+#define set_env_extension_proc vector_set_1
 
-#define GET_EXTENDED_FRAME_BINDINGS(frame)				\
-  (GET_FRAME_EXTENSION_BINDINGS (GET_FRAME_PROCEDURE (frame)))
+static inline unsigned long
+env_extension_length (SCHEME_OBJECT ext)
+{
+  return FIXNUM_TO_ULONG (VECTOR_REF (ext, 2));
+}
 
-#define GET_FRAME_EXTENSION_BINDINGS(extension)				\
-  ((OBJECT_ADDRESS (extension)) + ENV_EXTENSION_MIN_SIZE)
+static inline void
+set_env_extension_length (SCHEME_OBJECT ext, unsigned long n)
+{
+  VECTOR_SET (ext, 2, ULONG_TO_FIXNUM (n));
+}
 
-#define GET_EXTENDED_FRAME_LENGTH(frame)				\
-  (GET_FRAME_EXTENSION_LENGTH (GET_FRAME_PROCEDURE (frame)))
+static inline unsigned long
+env_extension_max_length (SCHEME_OBJECT ext)
+{
+  return VECTOR_LENGTH (ext) - 3;
+}
 
-#define GET_FRAME_EXTENSION_LENGTH(extension)				\
-  (UNSIGNED_FIXNUM_TO_LONG						\
-   ((OBJECT_ADDRESS (extension)) [ENV_EXTENSION_COUNT]))
+static inline SCHEME_OBJECT*
+env_extension_bindings (SCHEME_OBJECT ext)
+{
+  return VECTOR_LOC (ext, 3);
+}
 
-#define SET_EXTENDED_FRAME_LENGTH(frame, length)			\
-  (SET_FRAME_EXTENSION_LENGTH ((GET_FRAME_PROCEDURE (frame)), (length)))
+static inline bool
+extended_frame_p (SCHEME_OBJECT frame)
+{
+  return FRAME_EXTENSION_P (env_proc (frame));
+}
 
-#define SET_FRAME_EXTENSION_LENGTH(extension, length)			\
-  (((OBJECT_ADDRESS (extension)) [ENV_EXTENSION_COUNT])			\
-   = (LONG_TO_UNSIGNED_FIXNUM (length)))
+static inline SCHEME_OBJECT
+extended_frame_proc (SCHEME_OBJECT frame)
+{
+  return env_extension_proc (env_proc (frame));
+}
 
-#define GET_MAX_EXTENDED_FRAME_LENGTH(frame)				\
-  (GET_MAX_FRAME_EXTENSION_LENGTH (GET_FRAME_PROCEDURE (frame)))
+static inline SCHEME_OBJECT*
+extended_frame_bindings (SCHEME_OBJECT frame)
+{
+  return env_extension_bindings (env_proc (frame));
+}
 
-#define GET_MAX_FRAME_EXTENSION_LENGTH(extension)			\
-  ((VECTOR_LENGTH (extension)) - (ENV_EXTENSION_MIN_SIZE - 1))
+static inline unsigned long
+extended_frame_length (SCHEME_OBJECT frame)
+{
+  return env_extension_length (env_proc (frame));
+}
 
-#define GET_EXTENDED_FRAME_PROCEDURE(frame)				\
-  (GET_FRAME_EXTENSION_PROCEDURE (GET_FRAME_PROCEDURE (frame)))
+static inline unsigned long
+extended_frame_max_length (SCHEME_OBJECT frame)
+{
+  return env_extension_max_length (env_proc (frame));
+}
 
-#define GET_FRAME_EXTENSION_PROCEDURE(extension)			\
-  (MEMORY_REF ((extension), ENV_EXTENSION_PROCEDURE))
-
-#define SET_FRAME_EXTENSION_PROCEDURE(extension, procedure)		\
-  MEMORY_SET ((extension), ENV_EXTENSION_PROCEDURE, (procedure))
-
-#define SET_FRAME_EXTENSION_PARENT_FRAME(extension, frame)		\
-  MEMORY_SET ((extension), ENV_EXTENSION_PARENT_FRAME, (frame))
+static inline void
+set_extended_frame_length (SCHEME_OBJECT frame, unsigned long n)
+{
+  return set_env_extension_length (env_proc (frame), n);
+}
 
 /* EXTENDED_FIXNUM
  * Not used in the C version.  On the 68000 this is used for 24-bit
  * integers, while FIXNUM is used for 16-bit integers.
- */
-
-/* EXTENDED_PROCEDURE
- * Type of procedure created by evaluation of EXTENDED_LAMBDA.
- * It's fields are the same as those for PROCEDURE.
  */
 
 /* FALSE
@@ -350,14 +372,6 @@ USA.
  * operation to be performed.  An object of type PRIMITIVE can be
  * APPLYed in the same way an object of type PROCEDURE can be.
  */
-
-/* PROCEDURE (formerly CLOSURE)
- * Consists of two parts: a LAMBDA expression and the environment
- * in which the LAMBDA was evaluated to yield the PROCEDURE.
- */
-
-#define procedure_lambda memory_ref_0
-#define procedure_environment memory_ref_1
 
 /* QUAD or HUNK4
  * Like a pair but with 4 components.

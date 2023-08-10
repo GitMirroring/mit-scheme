@@ -256,6 +256,24 @@ memory_ref_2 (SCHEME_OBJECT obj)
   return MEMORY_REF (obj, 2);
 }
 
+static inline SCHEME_OBJECT*
+memory_loc_0 (SCHEME_OBJECT obj)
+{
+  return MEMORY_LOC (obj, 0);
+}
+
+static inline SCHEME_OBJECT*
+memory_loc_1 (SCHEME_OBJECT obj)
+{
+  return MEMORY_LOC (obj, 1);
+}
+
+static inline SCHEME_OBJECT*
+memory_loc_2 (SCHEME_OBJECT obj)
+{
+  return MEMORY_LOC (obj, 2);
+}
+
 static inline void
 memory_set_0 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
 {
@@ -293,6 +311,42 @@ memory_set_2 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
 #define VECTOR_LOC(v, i) (MEMORY_LOC ((v), ((i) + 1)))
 #define VECTOR_REF(v, i) (MEMORY_REF ((v), ((i) + 1)))
 #define VECTOR_SET(v, i, object) MEMORY_SET ((v), ((i) + 1), (object))
+
+static inline SCHEME_OBJECT
+vector_ref_0 (SCHEME_OBJECT obj)
+{
+  return VECTOR_REF (obj, 0);
+}
+
+static inline SCHEME_OBJECT
+vector_ref_1 (SCHEME_OBJECT obj)
+{
+  return VECTOR_REF (obj, 1);
+}
+
+static inline SCHEME_OBJECT
+vector_ref_2 (SCHEME_OBJECT obj)
+{
+  return VECTOR_REF (obj, 2);
+}
+
+static inline void
+vector_set_0 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  VECTOR_SET (obj, 0, val);
+}
+
+static inline void
+vector_set_1 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  VECTOR_SET (obj, 1, val);
+}
+
+static inline void
+vector_set_2 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  VECTOR_SET (obj, 2, val);
+}
 
 /* Bytevector operations */
 

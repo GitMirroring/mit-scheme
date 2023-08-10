@@ -35,7 +35,7 @@ USA.
 extern void init_exit_scheme (void);
 extern void OS_announcement (void);
 extern void initialize_fixed_objects_vector (void);
-extern SCHEME_OBJECT Re_Enter_Interpreter (void);
+extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
 extern SCHEME_OBJECT make_microcode_identification_vector (void);
 
 static void start_scheme (ictx_t*);

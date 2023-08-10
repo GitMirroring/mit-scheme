@@ -85,52 +85,40 @@ compiled_block_debug_filename (SCHEME_OBJECT block)
 #endif /* CC_SUPPORT_P */
 
 void
-Show_Env (SCHEME_OBJECT The_Env)
+Show_Env (SCHEME_OBJECT env)
 {
-  SCHEME_OBJECT *name_ptr, procedure, *value_ptr, extension;
-  long count, i;
+  SCHEME_OBJECT proc
+    = extended_frame_p (env) ? extended_frame_proc (env) : env_proc (env);
 
-  procedure = MEMORY_REF (The_Env, ENVIRONMENT_FUNCTION);
-  value_ptr = MEMORY_LOC (The_Env, ENVIRONMENT_FIRST_ARG);
-
-  if (FRAME_EXTENSION_P (procedure))
-  {
-    extension = procedure;
-    procedure = MEMORY_REF (extension, ENV_EXTENSION_PROCEDURE);
-  }
-  else
-    extension = SHARP_F;
-
-  if ((OBJECT_TYPE (procedure) != TC_PROCEDURE) &&
-      (OBJECT_TYPE (procedure) != TC_EXTENDED_PROCEDURE))
-  {
-    outf_error ("Not created by a procedure");
-    return;
-  }
-  name_ptr = MEMORY_LOC (procedure, PROCEDURE_LAMBDA_EXPR);
-  name_ptr = MEMORY_LOC (*name_ptr, LAMBDA_FORMALS);
-  count = VECTOR_LENGTH (*name_ptr) - 1;
-
-  name_ptr = MEMORY_LOC (*name_ptr, 2);
-  for (i = 0; i < count; i++)
-  {
-    Print_Expression (*name_ptr++, "Name ");
-    Print_Expression (*value_ptr++, " Value ");
-    outf_error ("\n");
-  }
-  if (extension != SHARP_F)
-  {
-    outf_error ("Auxiliary Variables\n");
-    count = (GET_FRAME_EXTENSION_LENGTH (extension));
-    for (i = 0, name_ptr = (GET_FRAME_EXTENSION_BINDINGS (extension));
-	 i < count;
-	 i++, name_ptr++)
+  if (OBJECT_TYPE (proc) != TC_PROCEDURE
+      && OBJECT_TYPE (proc) != TC_EXTENDED_PROCEDURE)
     {
-      Print_Expression ((PAIR_CAR (*name_ptr)), "Name ");
-      Print_Expression ((PAIR_CDR (*name_ptr)), " Value ");
+      outf_error ("Not created by a procedure\n");
+      return;
+    }
+  SCHEME_OBJECT lambda = procedure_lambda (proc);
+  SCHEME_OBJECT* params = lambda_params (lambda);
+  SCHEME_OBJECT* end_params = params + lambda_n_params (lambda);
+  SCHEME_OBJECT* vals = env_vals (env);
+  while (params < end_params)
+    {
+      Print_Expression (*params++, "Name ");
+      Print_Expression (*vals++, " Value ");
       outf_error ("\n");
     }
-  }
+  if (extended_frame_p (env))
+    {
+      outf_error ("Auxiliary Variables\n");
+      SCHEME_OBJECT* bindings = extended_frame_bindings (env);
+      SCHEME_OBJECT* end_bindings = bindings + extended_frame_length (env);
+      while (bindings < end_bindings)
+        {
+          Print_Expression ((PAIR_CAR (*bindings)), "Name ");
+          Print_Expression ((PAIR_CDR (*bindings)), " Value ");
+          outf_error ("\n");
+          bindings += 1;
+        }
+    }
 }
 
 static void
