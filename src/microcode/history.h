@@ -31,32 +31,77 @@ USA.
    each entry pointing to a "rib".  The rib consists of a singly
    linked ring whose entries contain expressions and environments. */
 
-#define HIST_RIB		0
-#define HIST_NEXT_SUBPROBLEM	1
-#define HIST_PREV_SUBPROBLEM	2
-#define HIST_MARK		1
+static inline SCHEME_OBJECT*
+make_history (SCHEME_OBJECT rib, SCHEME_OBJECT next, SCHEME_OBJECT prev)
+{
+  SCHEME_OBJECT* history = Free;
+  Free++ = rib;
+  Free++ = next;
+  Free++ = prev;
+  return history;
+}
 
-#define RIB_EXP			0
-#define RIB_ENV			1
-#define RIB_NEXT_REDUCTION	2
-#define RIB_MARK		2
+static inline SCHEME_OBJECT*
+make_history_rib (SCHEME_OBJECT exp, SCHEME_OBJECT env, SCHEME_OBJECT next)
+{
+  SCHEME_OBJECT* rib = Free;
+  Free++ = exp;
+  Free++ = env;
+  Free++ = next;
+  return rib;
+}
 
-#define HISTORY_MARK_TYPE (UNMARKED_HISTORY_TYPE ^ MARKED_HISTORY_TYPE)
-#define HISTORY_MARK_MASK (((unsigned long) HISTORY_MARK_TYPE) << DATUM_LENGTH)
+#define history_rib memory_ref_0
+#define set_history_rib memory_set_0
+#define history_next memory_ref_1
+#define set_history_next memory_set_1
+#define history_prev memory_ref_2
+#define set_history_prev memory_set_2
 
-#if ((UNMARKED_HISTORY_TYPE | HISTORY_MARK_TYPE) != MARKED_HISTORY_TYPE)
-#include "error: Bad history types in types.h and history.h"
-#endif
+#define history_rib_exp memory_ref_0
+#define set_history_rib_exp memory_set_0
+#define history_rib_env memory_ref_1
+#define set_history_rib_env memory_set_1
+#define history_rib_next memory_ref_2
+#define set_history_rib_next memory_set_2
 
-#define HISTORY_MARK(object) (object) |= HISTORY_MARK_MASK
-#define HISTORY_UNMARK(object) (object) &=~ HISTORY_MARK_MASK
-#define HISTORY_MARKED_P(object) (((object) & HISTORY_MARK_MASK) != 0)
+static inline SCHEME_OBJECT
+marked_history (SCHEME_OBJECT history)
+{
+  return OBJECT_NEW_TYPE (MARKED_HISTORY_TYPE, history);
+}
 
+static inline SCHEME_OBJECT
+unmarked_history (SCHEME_OBJECT history)
+{
+  return OBJECT_NEW_TYPE (UNMARKED_HISTORY_TYPE, history);
+}
+
+static inline bool
+marked_history_p (SCHEME_OBJECT history)
+{
+  return OBJECT_TYPE (history) == MARKED_HISTORY_TYPE;
+}
+
+static inline void
+mark_history (SCHEME_OBJECT history)
+{
+  memory_set_1 (history, marked_history (memory_ref_1 (history)));
+}
+
+static inline void
+mark_history_rib (SCHEME_OBJECT rib)
+{
+  memory_set_2 (rib, marked_history (memory_ref_2 (rib)));
+}
+
+static inline void
+unmark_history_rib (SCHEME_OBJECT rib)
+{
+  memory_set_2 (rib, unmarked_history (memory_ref_2 (rib)));
+}
 #define READ_DUMMY_HISTORY() VECTOR_REF (fixed_objects, DUMMY_HISTORY)
-
-#define SAVE_HISTORY_LENGTH (2 + CONTINUATION_SIZE)
-#define SAVE_HISTORY save_history
-#define RESET_HISTORY reset_history
+#define SAVE_HISTORY_LENGTH (CONTINUATION_SIZE + 2)
 
 #ifndef DISABLE_HISTORY
 #  define NEW_SUBPROBLEM new_subproblem
@@ -76,18 +121,14 @@ USA.
 #  define COMPILER_END_SUBPROBLEM() do {} while (false)
 #endif
 
-extern SCHEME_OBJECT * history_register;
-extern unsigned long prev_restore_history_offset;
-
-extern void reset_history (void);
+extern void reset_history (ictx_t*);
 extern SCHEME_OBJECT * make_dummy_history (void);
-extern void save_history (unsigned long);
-extern bool restore_history (SCHEME_OBJECT);
-extern void stop_history (void);
-extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT);
-extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT);
-extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT);
-extern void end_subproblem (void);
-extern void compiler_new_subproblem (void);
-extern void compiler_new_reduction (void);
-
+extern void save_history (unsigned long, ictx_t*);
+extern bool restore_history (SCHEME_OBJECT, ictx_t*);
+extern void stop_history (ictx_t*);
+extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+extern void end_subproblem (ictx_t*);
+extern void compiler_new_subproblem (ictx_t*);
+extern void compiler_new_reduction (ictx_t*);

@@ -33,36 +33,6 @@ USA.
 #include "object.h"
 #include "stack.h"
 
-typedef struct
-{
-  interpreter_state_t previous_state;
-  unsigned int nesting_level;
-  void* dstack_position;
-  jmp_buf catch_env;
-  int throw_argument;
-} interpreter_state_t;
-
-#define NULL_INTERPRETER_STATE ((interpreter_state_t*) 0)
-
-// Interpreter context
-typedef struct
-{
-  SCHEME_OBJECT* stack_start;
-  SCHEME_OBJECT* stack_guard;
-  SCHEME_OBJECT* stack_pointer;
-  SCHEME_OBJECT* stack_end;
-
-  SCHEME_OBJECT value_store[64];
-  SCHEME_OBJECT* value_pointer;
-
-  SCHEME_OBJECT* history;
-  unsigned long prev_restore_history_offset;
-
-  interpreter_state_t* state;
-  long prim_apply_error_code;
-
-} ictx_t;
-
 typedef enum
 {
   INT_ACTION_APPLY_CONT,
@@ -72,88 +42,37 @@ typedef enum
   INT_ACTION_DONE
 } int_action_t;
 
-extern ictx_t* new_ictx (unsigned long, SCHEME_OBJECT*);
-
-static inline void
-stack_push (SCHEME_OBJECT obj, ictx_t* ic)
-{
-  --(ic->stack_pointer) = obj;
-}
-
-static inline SCHEME_OBJECT
-stack_pop (ictx_t* ic)
-{
-  return (ic->stack_pointer)++;
-}
-
-static inline void
-decrement_sp (unsigned long n, ictx_t* ic)
-{
-  ic->stack_pointer -= n;
-}
-
-static inline SCHEME_OBJECT
-stack_ref (unsigned int n, ictx_t* ic)
-{
-  return ic->stack_pointer[n];
-}
-
-static inline SCHEME_OBJECT
-stack_loc (unsigned int n, ictx_t* ic)
-{
-  return ic->stack_pointer + n;
-}
-
-static inline void
-stack_set (unsigned int n, SCHEME_OBJECT obj, ictx_t* ic)
-{
-  return ic->stack_pointer[n] = obj;
-}
-
 static inline void
 stack_check (unsigned long n, ictx_t* ic)
 {
-  if ((ic->stack_pointer - n) < ic->stack_guard)
+  if (stack_can_push_p (n, ic))
     {
-      if (*(ic->stack_start) != (make_broken_heart (ic->stack_start)))
-        stack_death (ic);
-      REQUEST_INTERRUPT (INT_Stack_Overflow);
+      if (stack_overwritten_p (ic))
+        stack_death ("stack_check");
+      REQUEST_INTERRUPT (INT_Stack_Overflow, ic);
     }
-}
-
-static inline unsigned int
-n_vals (ictx_t* ic)
-{
-  return (ic->value_pointer - ic->value_store);
-}
-
-static inline void
-add_val (SCHEME_OBJECT val, ictx_t* ic)
-{
-  (ic->value_pointer)++ = val;
-}
-
-static inline SCHEME_OBJECT
-get_val (unsigned int n, ictx_t* ic)
-{
-  return ic->value_store[n];
-}
-
-static inline SCHEME_OBJECT
-get_single_val (ictx_t* ic)
-{
-  assert ((n_vals (ic)) == 1);
-  return ic->value_store[0];
 }
 
 static inline int_action_t
 single_val (SCHEME_OBJECT val, ictx_t* ic)
 {
-  ic->value_pointer = ic->value_store;
+  reset_vals (ic);
   add_val (val, ic);
   return INT_ACTION_APPLY_CONT;
 }
-
+
+static inline void
+set_restore_history_offset_and_mark (SCHEME_OBJECT offset, ictx_t* ic)
+{
+  set_restore_history_offset (offset, ic);
+  SCHEME_OBJECT* p = restore_history_pointer (ic);
+  if (p != 0)
+    *p = MAKE_RETURN_CODE (RC_RESTORE_HISTORY);
+}
+
+extern void abort_to_interpreter (int, ictx_t*) NORETURN;
+extern int abort_to_interpreter_argument (ictx_t*);
+
 /* Note: push_cont must match the definitions in sdata.h */
 
 static inline void
@@ -176,7 +95,7 @@ push_cont_env (unsigned long rc, SCHEME_OBJECT obj, SCHEME_OBJECT env,
   stack_push (env, ic);
   push_cont ((MAKE_RETURN_CODE (rc)), obj, ic);
 }
-
+
 static inline SCHEME_OBJECT
 make_apply_frame_header (unsigned long size)
 {
@@ -184,13 +103,13 @@ make_apply_frame_header (unsigned long size)
 }
 
 static inline unsigned long
-apply_frame_header_size (scheme_object header)
+apply_frame_header_size (SCHEME_OBJECT header)
 {
   return OBJECT_DATUM (header);
 }
 
 static inline unsigned long
-apply_frame_header_n_args (scheme_object header)
+apply_frame_header_n_args (SCHEME_OBJECT header)
 {
   return apply_frame_header_size (header) - 1;
 }
@@ -207,10 +126,22 @@ apply_frame_proc (ictx_t* ic)
   return stack_ref (1, ic);
 }
 
-static inline SCHEME_OBJECT*
-apply_frame_args (ictx_t* ic)
+static inline void
+set_apply_frame_proc (SCHEME_OBJECT proc, ictx_t* ic)
 {
-  return stack_loc (2, ic);
+  return stack_set (1, proc, ic);
+}
+
+static inline SCHEME_OBJECT
+apply_frame_first_arg (ictx_t* ic)
+{
+  return stack_ref (2, ic);
+}
+
+static inline void
+discard_apply_frame_header_and_proc (ictx_t* ic)
+{
+  ic->stack_pointer += 2;
 }
 
 static inline unsigned long
@@ -219,75 +150,13 @@ apply_frame_size (ictx_t* ic)
   return apply_frame_header_size (apply_frame_header (ic));
 }
 
-static inline interpreter_state_t*
-interpreter_state (ictx_t* ic)
+static inline unsigned long
+apply_frame_n_args (ictx_t* ic)
 {
-  return ic->state;
+  return apply_frame_header_n_args (apply_frame_header (ic));
 }
 
-static inline unsigned int
-interpreter_nesting_level (ictx_t* ic)
-{
-  return ic->state->nesting_level;
-}
-
-static inline unsigned int
-interpreter_nesting_level (ictx_t* ic)
-{
-  interpreter_state_t* s = ic->state;
-  return (s == NULL_INTERPRETER_STATE) ? 0 : (1 + s->nesting_level);
-}
-
-static inline jmp_buf
-interpreter_catch_env (ictx_t* ic)
-{
-  return ic->state->catch_env;
-}
-
-static inline jmp_buf
-interpreter_throw_argument (ictx_t* ic)
-{
-  return ic->state->throw_argument;
-}
-
-extern void abort_to_interpreter (int, ictx_t*) NORETURN;
-extern int abort_to_interpreter_argument (ictx_t*);
-
-
-/* C_call_scheme must save/restore history_register on/from the stack
-   so that it will be relocated if the call to Interpret() causes a
-   garbage collection. */
-
-#define APPLY_PRIMITIVE_FROM_INTERPRETER PRIMITIVE_APPLY
-
-/* Primitive utility macros */
-
-#ifndef ENABLE_DEBUGGING_TOOLS
-#  define PRIMITIVE_APPLY PRIMITIVE_APPLY_INTERNAL
-#else
-   extern void primitive_apply_internal (SCHEME_OBJECT);
-#  define PRIMITIVE_APPLY primitive_apply_internal
-#endif
-
-#define PRIMITIVE_APPLY_INTERNAL(primitive) do				\
-{									\
-  void * PRIMITIVE_APPLY_INTERNAL_position = dstack_position;		\
-  SET_PRIMITIVE (primitive);						\
-  Free_primitive = Free;						\
-  SET_VAL								\
-    ((* (Primitive_Procedure_Table [PRIMITIVE_NUMBER (primitive)]))	\
-     ());								\
-  /* If the primitive failed to unwind the dynamic stack, lose. */	\
-  if (PRIMITIVE_APPLY_INTERNAL_position != dstack_position)		\
-    {									\
-      outf_fatal ("\nPrimitive slipped the dynamic stack: %s\n",	\
-		  (PRIMITIVE_NAME (primitive)));			\
-      Microcode_Termination (TERM_EXIT);				\
-    }									\
-  Free_primitive = 0;							\
-  SET_PRIMITIVE (SHARP_F);						\
-} while (0)
-
-#define POP_PRIMITIVE_FRAME(arity) (stack_pointer = (STACK_LOC (arity)))
+extern int_action_t primitive_apply_internal (SCHEME_OBJECT, ictx_t*);
+#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, ic))
 
 #endif /* not SCM_INTERP_H */

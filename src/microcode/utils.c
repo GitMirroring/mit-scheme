@@ -185,7 +185,7 @@ error_death (long code, const char * message)
 }
 
 void
-Stack_Death (void)
+Stack_Death (ictx_t* ic)
 {
   outf_fatal("\nWill_Push vs. Pushed inconsistency.\n");
   Microcode_Termination (TERM_BAD_STACK);
@@ -209,28 +209,27 @@ preserve_interrupt_mask (void)
    and reenter.  */
 
 void
-canonicalize_primitive_context (void)
+canonicalize_primitive_context (ictx_t* ic)
 {
-  SCHEME_OBJECT primitive = GET_PRIMITIVE;
-  unsigned long n_args;
+  SCHEME_OBJECT primitive = get_primitive (ic);
 
   assert (PRIMITIVE_P (primitive));
-  n_args = (PRIMITIVE_N_ARGUMENTS (primitive));
+  unsigned long n_args = (PRIMITIVE_N_ARGUMENTS (primitive));
 
 #ifdef CC_SUPPORT_P
   if (CC_RETURN_P (STACK_REF (n_args)))
     {
       /* The primitive has been invoked from compiled code. */
-      STACK_PUSH (primitive);
-      PUSH_APPLY_FRAME_HEADER (n_args);
+      stack_push (primitive, ic);
+      stack_push (make_apply_frame_header (n_args + 1), ic);
       guarantee_interp_return ();
-      SET_PRIMITIVE (SHARP_F);
+      reset_primitive_only (ic);
       PRIMITIVE_ABORT (PRIM_APPLY);
       /*NOTREACHED*/
     }
 #endif
 
-  assert (RETURN_CODE_P (STACK_REF (n_args)));
+  assert (RETURN_CODE_P (stack_ref (n_args, ic)));
 }
 
 /* back_out_of_primitive sets the registers up so that the backout
@@ -238,19 +237,16 @@ canonicalize_primitive_context (void)
    restarted if the error/interrupt is proceeded.  */
 
 void
-back_out_of_primitive (void)
+back_out_of_primitive (ictx_t* ic)
 {
-  SCHEME_OBJECT primitive = GET_PRIMITIVE;
+  SCHEME_OBJECT primitive = get_primitive (ic);
   assert (PRIMITIVE_P (primitive));
-  STACK_PUSH (primitive);
-  PUSH_APPLY_FRAME_HEADER (PRIMITIVE_N_ARGUMENTS (primitive));
+  stack_push (primitive, ic);
+  stack_push (make_apply_frame_header (PRIMITIVE_N_ARGUMENTS (primitive) + 1),
+              ic);
   guarantee_interp_return ();
-  SET_PRIMITIVE (SHARP_F);
-  SET_EXP (SHARP_F);
-  SET_RC (RC_INTERNAL_APPLY);
-  SAVE_CONT ();
-  SET_ENV (THE_NULL_ENV);
-  SET_VAL (SHARP_F);
+  reset_primitive_only (ic);
+  push_cont_rc (RC_INTERNAL_APPLY, SHARP_F);
 }
 
 /* Useful error procedures */
@@ -677,7 +673,7 @@ Do_Micro_Error (long error_code, bool from_pop_return_p)
 	  outf_error ("\n");
 	  {
 	    int i, nargs = (APPLY_FRAME_HEADER_N_ARGS
-			    (STACK_REF(CONTINUATION_SIZE + STACK_ENV_HEADER)));
+			    (STACK_REF (CONTINUATION_SIZE + STACK_ENV_HEADER)));
 	    for (i = 0; i < nargs; i += 1)
 	      {
 		outf_error ("Argument %d: ", i+1);
@@ -763,36 +759,29 @@ Do_Micro_Error (long error_code, bool from_pop_return_p)
 /* History */
 
 void
-reset_history (void)
+reset_history (ictx_t* ic)
 {
-  prev_restore_history_offset = 0;
-  history_register
-    = (((VECTOR_P (fixed_objects))
-	&& ((READ_DUMMY_HISTORY ()) != SHARP_F))
-       ? (OBJECT_ADDRESS (READ_DUMMY_HISTORY ()))
-       : (make_dummy_history ()));
+  set_history
+    (((VECTOR_P (fixed_objects) && (READ_DUMMY_HISTORY () != SHARP_F))
+      ? READ_DUMMY_HISTORY ()
+      : make_dummy_history ()),
+     ic);
+  set_restore_history_offset (ULONG_TO_FIXNUM (0), ic);
 }
 
 SCHEME_OBJECT *
 make_dummy_history (void)
 {
-  SCHEME_OBJECT * rib = Free;
-  (Free[RIB_EXP]) = SHARP_F;
-  (Free[RIB_ENV]) = SHARP_F;
-  (Free[RIB_NEXT_REDUCTION])
-    = (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, rib));
-  Free += 3;
-  {
-    SCHEME_OBJECT * history = Free;
-    (Free[HIST_RIB])
-      = (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, rib));
-    (Free[HIST_NEXT_SUBPROBLEM])
-      = (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, history));
-    (Free[HIST_PREV_SUBPROBLEM])
-      = (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, history));
-    Free += 3;
-    return (history);
-  }
+  SCHEME_OBJECT rib
+    = MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE,
+                           make_history_rib (SHARP_F, SHARP_F, SHARP_F));
+  set_history_rib_next (rib, rib);
+  SCHEME_OBJECT history
+    = MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE,
+                           make_history (rib, SHARP_F, SHARP_F));
+  set_history_next (history, history);
+  set_history_prev (history, history);
+  return OBJECT_ADDRESS (history);
 }
 
 /* save_history places a restore history frame on the stack. Such a
@@ -804,16 +793,13 @@ make_dummy_history (void)
    and the offset is 0. */
 
 void
-save_history (unsigned long rc)
+save_history (unsigned long rc, ictx_t* ic)
 {
-  Will_Push (HISTORY_SIZE);
-  STACK_PUSH (SHARP_F);		/* Prev_Restore_History_Stacklet */
-  STACK_PUSH (ULONG_TO_FIXNUM (prev_restore_history_offset));
-  SET_EXP (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, history_register));
-  SET_RC (rc);
-  SAVE_CONT ();
-  Pushed ();
-  history_register = (OBJECT_ADDRESS (READ_DUMMY_HISTORY ()));
+  stack_check (HISTORY_SIZE, ic);
+  stack_push (SHARP_F, ic); /* Prev_Restore_History_Stacklet */
+  stack_push (restore_history_offset (ic));
+  push_cont_rc (rc, unmarked_history (get_history (ic)), ic);
+  set_history (READ_DUMMY_HISTORY (), ic);
 }
 
 /* restore_history pops a history object off the stack and makes a
@@ -821,12 +807,12 @@ save_history (unsigned long rc)
    only from the RC_RESTORE_HISTORY case in "interp.c".  */
 
 bool
-restore_history (SCHEME_OBJECT hist_obj)
+restore_history (SCHEME_OBJECT history, ictx_t* ic)
 {
-  SCHEME_OBJECT new_hist = (copy_history (hist_obj));
-  if (new_hist == SHARP_F)
+  SCHEME_OBJECT new_hist = copy_history (history);
+  if (new_history == SHARP_F)
     return (false);
-  history_register = (OBJECT_ADDRESS (new_hist));
+  set_history (new_history, ic);
   return (true);
 }
 
@@ -838,68 +824,62 @@ restore_history (SCHEME_OBJECT hist_obj)
    are not side-effected in the history collection process.  */
 
 void
-stop_history (void)
+stop_history (ictx_t* ic)
 {
-  SCHEME_OBJECT exp = GET_EXP;
-  SCHEME_OBJECT ret = GET_RET;
-  SAVE_HISTORY (RC_RESTORE_DONT_COPY_HISTORY);
-  prev_restore_history_offset = (STACK_N_PUSHED + CONTINUATION_RETURN_CODE);
-  SET_RET (ret);
-  SET_EXP (exp);
+  save_history (RC_RESTORE_DONT_COPY_HISTORY, ic);
+  set_restore_history_offset (stack_n_pushed (ic));
 }
 
 void
-new_subproblem (SCHEME_OBJECT expression, SCHEME_OBJECT environment)
+new_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  history_register = (OBJECT_ADDRESS (history_register[HIST_NEXT_SUBPROBLEM]));
-  HISTORY_MARK (history_register[HIST_MARK]);
-  {
-    SCHEME_OBJECT * rib = (OBJECT_ADDRESS (history_register[HIST_RIB]));
-    HISTORY_MARK (rib[RIB_MARK]);
-    (rib[RIB_ENV]) = environment;
-    (rib[RIB_EXP]) = expression;
-  }
+  SCHEME_OBJECT history = history_next (get_history (ic));
+  SCHEME_OBJECT rib = history_rib (history);
+  mark_history (history);
+  set_history_rib_exp (rib, exp);
+  set_history_rib_env (rib, env);
+  mark_history_rib (rib);
+  set_history (history, ic);
 }
 
 void
-reuse_subproblem (SCHEME_OBJECT expression, SCHEME_OBJECT environment)
+reuse_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  SCHEME_OBJECT * rib = (OBJECT_ADDRESS (history_register[HIST_RIB]));
-  HISTORY_MARK (rib[RIB_MARK]);
-  (rib[RIB_ENV]) = environment;
-  (rib[RIB_EXP]) = expression;
+  SCHEME_OBJECT rib = history_rib (get_history (ic));
+  set_history_rib_exp (rib, exp);
+  set_history_rib_env (rib, env);
+  mark_history_rib (rib);
 }
 
 void
-new_reduction (SCHEME_OBJECT expression, SCHEME_OBJECT environment)
+new_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  SCHEME_OBJECT * rib
-    = (OBJECT_ADDRESS
-       (MEMORY_REF ((history_register[HIST_RIB]), RIB_NEXT_REDUCTION)));
-  (history_register[HIST_RIB])
-    = (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, rib));
-  (rib[RIB_ENV]) = (environment);
-  (rib[RIB_EXP]) = (expression);
-  HISTORY_UNMARK (rib[RIB_MARK]);
+  SCHEME_OBJECT history = get_history (ic);
+  SCHEME_OBJECT next = history_rib_next (history_rib (history));
+  set_history_rib_exp (next, exp);
+  set_history_rib_env (next, env);
+  unmark_history_rib (next);
+  set_history_rib (history, unmarked_history (next));
 }
 
 void
-end_subproblem (void)
+end_subproblem (ictx_t* ic)
 {
-  HISTORY_UNMARK (history_register[HIST_MARK]);
-  history_register = (OBJECT_ADDRESS (history_register[HIST_PREV_SUBPROBLEM]));
+  SCHEME_OBJECT history = get_history (ic);
+  unmark_history (history);
+  set_history (history_prev (history), ic);
 }
 
 void
-compiler_new_subproblem (void)
+compiler_new_subproblem (ictx_t* ic)
 {
-  new_subproblem (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)));
+  new_subproblem (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)), ic);
 }
 
 void
-compiler_new_reduction (void)
+compiler_new_reduction (ictx_t* ic)
 {
-  new_reduction (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)));
+  new_reduction (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)), ic);
 }
 
 /* Returns SHARP_F if insufficient space available.  */
@@ -989,42 +969,40 @@ copy_history (SCHEME_OBJECT hist_obj)
    omitted and a macro from "interp.h" is used to directly code the
    call to the primitive function. */
 
-#ifdef ENABLE_DEBUGGING_TOOLS
-
-void
-primitive_apply_internal (SCHEME_OBJECT primitive)
+int_action_t
+primitive_apply_internal (SCHEME_OBJECT primitive, ictx_t* ic)
 {
+#ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
     Print_Primitive (primitive);
-#if 0
-  {
-    SCHEME_OBJECT * saved_stack = stack_pointer;
-    PRIMITIVE_APPLY_INTERNAL (primitive);
-    /* Some primitives violate this condition, for example,
-       WITH-INTERRUPT-MASK.  */
-    if (saved_stack != stack_pointer)
-      {
-	unsigned long arity = (PRIMITIVE_N_ARGUMENTS (primitive));
-	Print_Expression (primitive, "Stack bad after ");
-	outf_fatal ("\nStack was %#lx, now %#lx, #args=%lu.\n",
-		    ((unsigned long) saved_stack),
-		    ((unsigned long) stack_pointer),
-		    arity);
-	Microcode_Termination (TERM_EXIT);
-      }
-  }
-#else
-  PRIMITIVE_APPLY_INTERNAL (primitive);
 #endif
+  interpreter_state_t* state = interpreter_state (ic);
+  void* position = state->dstack_position;
+  set_primitive (primitive, ic);
+  set_primitive_free (Free, ic);
+  SCHEME_OBJECT val
+    = (*(Primitive_Procedure_Table[PRIMITIVE_NUMBER (primitive)])) (ic);
+  /* If the primitive failed to unwind the dynamic stack, lose. */
+  if (position != state->dstack_position)
+    {
+      outf_fatal ("\nPrimitive slipped the dynamic stack: %s\n",
+		  (PRIMITIVE_NAME (primitive)));
+      Microcode_Termination (TERM_EXIT);
+    }
+  set_primitive (SHARP_F, ic);
+  set_primitive_free (0, ic);
+#ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
     {
-      Print_Expression (GET_VAL, "Primitive Result");
+      Print_Expression (val, "Primitive Result");
       outf_error("\n");
       outf_flush_error();
     }
+#endif
+  return single_val (val, ic);
 }
 
-#endif /* ENABLE_DEBUGGING_TOOLS */
+ /* ENABLE_DEBUGGING_TOOLS */
 
 #ifdef ENABLE_PRIMITIVE_PROFILING
 

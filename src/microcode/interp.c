@@ -30,7 +30,7 @@ USA.
 #include "lookup.h"
 #include "history.h"
 
-ictx_t*
+static ictx_t*
 new_ictx (unsigned long size, SCHEME_OBJECT* block)
 {
   ictx_t* ic = (malloc (sizeof (ictx_t)));
@@ -51,7 +51,37 @@ new_ictx (unsigned long size, SCHEME_OBJECT* block)
 	&& ((READ_DUMMY_HISTORY ()) != SHARP_F))
        ? (OBJECT_ADDRESS (READ_DUMMY_HISTORY ()))
        : (make_dummy_history ()));
+  ic->restore_history_offset = 0;
+  ic->state = 0;
+  ic->prim_apply_error_code = PRIM_DONE;
+  ic->primitive = SHARP_F;
+  ic->primitive_free = 0;
   return ic;
+}
+
+// This will need to be thread local:
+static ictx_t* global_ictx;
+
+ictx_t*
+initialize_ictx (unsigned long size, SCHEME_OBJECT* block)
+{
+  global_ictx = new_ictx (size, block);
+  return global_ictx;
+}
+
+ictx_t*
+get_ictx (void)
+{
+  return global_ictx;
+}
+
+void
+reset_stack (ictx_t* ic)
+{
+  ic->stack_pointer = ic->stack_end;
+  *ic->stack_start = (MAKE_BROKEN_HEART (ic->stack_start));
+  ic->stack_guard = ic->stack_start + STACK_GUARD_SIZE;
+  compiler_setup_interrupt (ic);
 }
 
 static inline int_action_t
@@ -83,6 +113,48 @@ eval_error (long code)
   Do_Micro_Error (code, false);
   return INT_ACTION_APPLY_PROC;
 }
+
+static inline SCHEME_OBJECT
+make_delayed (SCHEME_OBJECT proc, SCHEME_OBJECT env)
+{
+  /* Deliberately omitted: EVAL_GC_CHECK (2); */
+  SCHEME_OBJECT delayed = MAKE_POINTER_OBJECT (TC_DELAYED, Free);
+  Free++ = proc;
+  Free++ = env;
+  return delayed;
+}
+
+static inline SCHEME_OBJECT
+snap_delayed (SCHEME_OBJECT delayed, SCHEME_OBJECT val)
+{
+  // Don't snap thunk twice; evaluation of the thunk's body might have snapped
+  // it already.
+  if ((MEMORY_REF (delayed, 0)) == SHARP_T)
+    return MEMORY_REF (delayed, 1);
+  MEMORY_SET (delayed, 0, SHARP_T);
+  MEMORY_SET (delayed, 1, val);
+  return val;
+}
+
+static inline SCHEME_OBJECT
+make_procedure (SCHEME_OBJECT lambda, SCHEME_OBJECT env)
+{
+  /* Deliberately omitted: EVAL_GC_CHECK (2); */
+  SCHEME_OBJECT proc = (MAKE_POINTER_OBJECT (TC_PROCEDURE, Free));
+  Free++ = lambda;
+  Free++ = env;
+  return proc;
+}
+
+static inline SCHEME_OBJECT
+make_extended_procedure (SCHEME_OBJECT lambda, SCHEME_OBJECT env)
+{
+  /* Deliberately omitted: EVAL_GC_CHECK (2); */
+  SCHEME_OBJECT proc = (MAKE_POINTER_OBJECT (TC_EXTENDED_PROCEDURE, Free));
+  Free++ = lambda;
+  Free++ = env;
+  return proc;
+}
 
 static inline int_action_t
 eval_access (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
@@ -95,7 +167,7 @@ eval_access (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 static inline int_action_t
 eval_assignment (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  stack_check ((CONTINUATION_SIZE + 1), ic);
+  stack_check (CONTINUATION_SIZE + 1, ic);
   stack_push (env, ic);
   push_cont_rc (RC_EXECUTE_ASSIGNMENT_FINISH, exp, ic);
   return eval_subproblem (assignment_value (exp), env, ic);
@@ -104,13 +176,13 @@ eval_assignment (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 static inline int_action_t
 eval_combination (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  unsigned long n_args = (combination_size (exp) - 1);
-  stack_check ((CONTINUATION_SIZE + 2 + n_args), ic);
+  unsigned long n_args = combination_size (exp) - 1;
+  stack_check (CONTINUATION_SIZE + 2 + n_args, ic);
   decrement_sp (n_args, ic);
-  stack_push ((MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n_args)), ic);
+  stack_push (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n_args), ic);
   if (n_args == 0)
     {
-      stack_push (make_apply_frame_header (0), ic);
+      stack_push (make_apply_frame_header (1), ic);
       push_cont_rc (RC_COMB_APPLY_FUNCTION, exp, ic);
     }
   else
@@ -146,18 +218,13 @@ eval_definition (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 static inline int_action_t
 eval_delay (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  /* Deliberately omitted: EVAL_GC_CHECK (2); */
-  SCHEME_OBJECT delayed = (MAKE_POINTER_OBJECT (TC_DELAYED, Free));
-  (Free[THUNK_ENVIRONMENT]) = env;
-  (Free[THUNK_PROCEDURE]) = delay_object (exp);
-  Free += 2;
-  return single_val (delayed, ic);
+  return single_val (make_delayed (delay_object (exp), env), ic);
 }
 
 static inline int_action_t
 eval_disjunction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  stack_check ((CONTINUATION_SIZE + 1), ic);
+  stack_check (CONTINUATION_SIZE + 1, ic);
   push_cont_env (RC_DISJUNCTION_DECIDE, exp, env, ic);
   return eval_subproblem (disjunction_predicate (exp), env, ic);
 }
@@ -165,23 +232,13 @@ eval_disjunction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 static inline int_action_t
 eval_extended_lambda (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  /* Deliberately omitted: EVAL_GC_CHECK (2); */
-  SCHEME_OBJECT proc = (MAKE_POINTER_OBJECT (TC_EXTENDED_PROCEDURE, Free));
-  (Free[PROCEDURE_LAMBDA_EXPR]) = exp;
-  (Free[PROCEDURE_ENVIRONMENT]) = env;
-  Free += 2;
-  return single_val (proc, ic);
+  return single_val (make_extended_procedure (exp, env), ic);
 }
 
 static inline int_action_t
 eval_lambda (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  /* Deliberately omitted: EVAL_GC_CHECK (2); */
-  SCHEME_OBJECT proc = (MAKE_POINTER_OBJECT (TC_PROCEDURE, Free));
-  (Free[PROCEDURE_LAMBDA_EXPR]) = exp;
-  (Free[PROCEDURE_ENVIRONMENT]) = env;
-  Free += 2;
-  return single_val (proc, ic);
+  return single_val (make_procedure (exp, env), ic);
 }
 
 static inline int_action_t
@@ -436,7 +493,7 @@ cont_hardware_trap (SCHEME_OBJECT ret, SCHEME_OBJECT exp, ictx_t* ic)
   stack_check ((STACK_ENV_EXTRA_SLOTS + 2), ic);
   stack_push (info, ic);
   stack_push (handler, ic);
-  stack_push ((make_apply_frame_header (1)), ic);
+  stack_push ((make_apply_frame_header (2)), ic);
   return INT_ACTION_APPLY_PROC;
 }
 
@@ -452,6 +509,14 @@ cont_end_of_computation (ictx_t* ic)
       set_interpreter_state (previous_state, ic);
     }
   return INT_ACTION_DONE;
+}
+
+static inline int_action_t
+cont_sequence_finish (SCHEME_OBJECT exp, ictx_t* ic)
+{
+  end_subproblem (ic);
+  SCHEME_OBJECT env = stack_pop (ic);
+  return eval_reduction (sequence_2 (exp), env, ic);
 }
 
 static int_action_t
@@ -494,6 +559,76 @@ apply_cont (ictx_t* ic)
         return INT_ACTION_APPLY_PROC;
       }
 
+    case RC_JOIN_STACKLETS:
+      unpack_control_point (exp, ic);
+      return INT_ACTION_APPLY_CONT;
+
+    case RC_NORMAL_GC_DONE:
+      SET_VAL (GET_EXP);
+      /* Paranoia */
+      if (GC_NEEDED_P (gc_space_needed))
+        termination_gc_out_of_space ();
+      gc_space_needed = 0;
+      EXIT_CRITICAL_SECTION ({ PUSH_CONT (GET_RET, GET_EXP); });
+      break;
+
+    case RC_POP_RETURN_ERROR:
+    case RC_RESTORE_VALUE:
+      return single_val (exp, ic);
+
+    /* The following two return codes are both used to restore a
+       saved history object.	The difference is that the first does
+       not copy the history object while the second does.  In both
+       cases, the GET_EXP contains the history object and the
+       next item to be popped off the stack contains the offset back
+       to the previous restore history return code.  */
+
+    case RC_RESTORE_DONT_COPY_HISTORY:
+      {
+        increment_sp (1, ic);   // obsolete field
+        set_history (OBJECT_ADDRESS (exp));
+        set_prev_restore_history_offset (stack_pop (ic));
+        return INT_ACTION_APPLY_CONT;
+      }
+
+    case RC_RESTORE_HISTORY:
+      {
+        if (!restore_history (exp, ic))
+          {
+            push_cont (ret, exp, ic);
+            stack_check (CONTINUATION_SIZE, ic);
+            push_cont_rc (RC_RESTORE_VALUE, get_single_val (ic));
+            IMMEDIATE_GC (HEAP_AVAILABLE);
+          }
+        increment_sp (1, ic);   // obsolete field
+        set_restore_history_offset_and_mark (stack_pop (ic), ic);
+        return INT_ACTION_APPLY_CONT;
+      }
+
+    case RC_RESTORE_INT_MASK:
+      SET_INTERRUPT_MASK (UNSIGNED_FIXNUM_TO_LONG (exp));
+      if (GC_NEEDED_P (0))
+        REQUEST_GC (0);
+      if (PENDING_INTERRUPTS_P)
+        {
+          push_cont_rc (RC_RESTORE_VALUE, get_single_val (ic));
+          SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+        }
+      break;
+
+    case RC_STACK_MARKER:
+      /* Frame consists of the return code followed by two objects.
+         The first object has already been popped into exp,
+         so just pop the second argument.  */
+      increment_sp (1, ic);
+      break;
+
+    case RC_EXECUTE_SEQUENCE_FINISH:
+      return cont_sequence_finish (exp, ic);
+
+    case RC_SNAP_NEED_THUNK:
+      return single_value (snap_delayed (exp, get_single_val (ic)), ic);
+
 #ifdef CC_SUPPORT_P
 #define CREST(return_code, entry)                                       \
     case return_code:                                                   \
@@ -517,23 +652,14 @@ apply_cont (ictx_t* ic)
 #endif
 
     default:
-      push_cont (ret, exp, ic);
-      return eval_error (ERR_UNKNOWN_RC);
+      POP_RETURN_ERROR (ERR_INAPPLICABLE_CONTINUATION);
     }
 }
 
 static int_action_t
 apply_proc (ictx_t* ic)
 {
-    Apply_Non_Trapping:
-      if (PENDING_INTERRUPTS_P)
-        {
-          unsigned long interrupts = (PENDING_INTERRUPTS ());
-          PREPARE_APPLY_INTERRUPT ();
-          SIGNAL_INTERRUPT (interrupts);
-        }
-
-    /* internal_apply, the core of the application mechanism.
+  /* internal_apply, the core of the application mechanism.
 
        Branch here to perform a function application.
 
@@ -549,318 +675,204 @@ apply_proc (ictx_t* ic)
        registers are cleared to avoid holding onto garbage if a
        garbage collection occurs.  */
 
-    Apply_Non_Trapping:
-      if (PENDING_INTERRUPTS_P)
+  if (PENDING_INTERRUPTS_P)
+    {
+      unsigned long interrupts = (PENDING_INTERRUPTS ());
+      PREPARE_APPLY_INTERRUPT ();
+      SIGNAL_INTERRUPT (interrupts);
+    }
+
+  {
+    SCHEME_OBJECT proc = (apply_frame_proc ());
+    switch (OBJECT_TYPE (proc))
+      {
+      case TC_ENTITY:
         {
-          unsigned long interrupts = (PENDING_INTERRUPTS ());
-          PREPARE_APPLY_INTERRUPT ();
-          SIGNAL_INTERRUPT (interrupts);
+          unsigned long frame_size = apply_frame_size (ic);
+          SCHEME_OBJECT data = entity_data (proc);
+          if (VECTOR_P (data) && (frame_size < VECTOR_LENGTH (data))
+              && (VECTOR_REF (data, frame_size) != SHARP_F)
+              && (VECTOR_REF (data, 0)
+                  == VECTOR_REF (fixed_objects, ARITY_DISPATCHER_TAG)))
+            set_apply_frame_proc (VECTOR_REF (data, frame_size), ic);
+          else
+            {
+              increment_sp (1, ic); // discard header
+              stack_push (entity_operator (proc), ic);
+              stack_push (make_apply_frame_header (frame_size + 1), ic);
+            }
+          /* This must be done to prevent an infinite push loop by
+             an entity whose handler is the entity itself or some
+             other such loop.  Of course, it will die if stack overflow
+             interrupts are disabled.  */
+          stack_check (0, ic);
+          return INT_ACTION_APPLY_PROC;
         }
 
-    perform_application:
-#ifdef APPLY_UCODE_HOOK
-      APPLY_UCODE_HOOK ();
-#endif
-      {
-        SCHEME_OBJECT proc = (apply_frame_proc ());
+      case TC_RECORD:
+        {
+          SCHEME_OBJECT applicator = record_applicator (proc);
+          if (applicator == SHARP_F)
+            APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
+          unsigned long frame_size = apply_frame_size (ic);
+          increment_sp (1, ic); // discard header
+          stack_push (applicator, ic);
+          stack_push (make_apply_frame_header (frame_size + 1));
+          stack_check (0, ic);  // see above
+          return INT_ACTION_APPLY_PROC;
+        }
 
-      apply_dispatch:
-        switch (OBJECT_TYPE (proc))
+      case TC_PROCEDURE:
+        {
+          unsigned long frame_size = apply_frame_size (ic);
+          SCHEME_OBJECT lambda = procedure_lambda (proc);
           {
-          case TC_ENTITY:
-            {
-              unsigned long frame_size = (apply_frame_size ());
-              SCHEME_OBJECT data = (MEMORY_REF (proc, ENTITY_DATA));
-              if ((VECTOR_P (data))
-                && (frame_size < (VECTOR_LENGTH (data)))
-                  && ((VECTOR_REF (data, frame_size)) != SHARP_F)
-                  && ((VECTOR_REF (data, 0))
-                      == (VECTOR_REF (fixed_objects, ARITY_DISPATCHER_TAG))))
-                {
-                  (APPLY_FRAME_PROCEDURE ()) = (VECTOR_REF (data, frame_size));
-                  goto apply_dispatch;
-                }
-              (STACK_REF (0)) = (MEMORY_REF (proc, ENTITY_OPERATOR));
-              stack_push (make_apply_frame_header (frame_size), ic);
-
-            entity_apply:
-              /* This must be done to prevent an infinite push loop by
-                 an entity whose handler is the entity itself or some
-                 other such loop.  Of course, it will die if stack overflow
-                 interrupts are disabled.  */
-              STACK_CHECK (0);
-              goto internal_apply;
-            }
-
-          case TC_RECORD:
-            {
-              SCHEME_OBJECT applicator = record_applicator(proc);
-              if (applicator == SHARP_F)
-                APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
-              unsigned long frame_size = (APPLY_FRAME_SIZE ());
-              (STACK_REF (0)) = applicator;
-              PUSH_APPLY_FRAME_HEADER (frame_size);
-              goto entity_apply;
-            }
-
-          case TC_PROCEDURE:
-            {
-              unsigned long frame_size = (APPLY_FRAME_SIZE (ic));
-              SCHEME_OBJECT lambda = (MEMORY_REF (proc, PROCEDURE_LAMBDA_EXPR));
-              {
-                SCHEME_OBJECT formals
-                  = (MEMORY_REF (lambda, LAMBDA_FORMALS));
-                if ((frame_size != (VECTOR_LENGTH (formals)))
-                    && (((OBJECT_TYPE (lambda)) != TC_LEXPR)
-                        || (frame_size < (VECTOR_LENGTH (formals)))))
-                  APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-              }
-              if (GC_NEEDED_P (frame_size + 1))
-                {
-                  PREPARE_APPLY_INTERRUPT ();
-                  IMMEDIATE_GC (frame_size + 1);
-                }
-              {
-                SCHEME_OBJECT * end = (Free + 1 + frame_size);
-                SCHEME_OBJECT env
-                  = (MAKE_POINTER_OBJECT (TC_ENVIRONMENT, Free));
-                (*Free++) = (MAKE_OBJECT (TC_MANIFEST_VECTOR, frame_size));
-                (void) stack_pop (stack);
-                while (Free < end)
-                  (*Free++) = (stack_pop (stack));
-                SET_ENV (env);
-                REDUCES_TO (lambda_body (lambda));
-              }
-            }
-
-          case TC_CONTROL_POINT:
-            if ((APPLY_FRAME_SIZE ()) != 2)
+            SCHEME_OBJECT names = lambda_names (lambda);
+            if ((frame_size != VECTOR_LENGTH (names))
+                && ((OBJECT_TYPE (lambda) != TC_LEXPR)
+                    || (frame_size < VECTOR_LENGTH (names))))
               APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-            SET_VAL (* (APPLY_FRAME_ARGS ()));
-            unpack_control_point (proc);
-            RESET_HISTORY ();
-            goto pop_return;
-
-          /* After checking the number of arguments, remove the
-             frame header since primitives do not expect it. */
-
-          case TC_PRIMITIVE:
-            if (!IMPLEMENTED_PRIMITIVE_P (proc))
-              APPLICATION_ERROR (ERR_UNIMPLEMENTED_PRIMITIVE);
+          }
+          if (GC_NEEDED_P (frame_size + 1))
             {
-              unsigned long n_args = (APPLY_FRAME_N_ARGS ());
+              PREPARE_APPLY_INTERRUPT ();
+              IMMEDIATE_GC (frame_size + 1);
+            }
+          SCHEME_OBJECT* end = Free + 1 + frame_size;
+          SCHEME_OBJECT env = MAKE_POINTER_OBJECT (TC_ENVIRONMENT, Free);
+          (*Free++) = MAKE_OBJECT (TC_MANIFEST_VECTOR, frame_size);
+          increment_sp (1, ic); // discard header
+          while (Free < end)
+            (*Free++) = stack_pop (ic);
+          return eval_reduction (lambda_body (lambda), env, ic);
+        }
 
-              /* Note that the first test below will fail for lexpr
-                 primitives.  */
+      case TC_CONTROL_POINT:
+        if (apply_frame_size (ic) != 2)
+          APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+        SCHEME_OBJECT val = *(apply_frame_args (ic));
+        unpack_control_point (proc, ic);
+        reset_history (ic);
+        return single_val (val, ic);
 
-              if (n_args != (PRIMITIVE_ARITY (proc)))
-                {
-                  if ((PRIMITIVE_ARITY (proc)) != LEXPR_PRIMITIVE_ARITY)
-                    APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-                  SET_LEXPR_ACTUALS (n_args);
-                }
-              stack_pointer = (APPLY_FRAME_ARGS ());
-              SET_EXP (proc);
-              APPLY_PRIMITIVE_FROM_INTERPRETER (proc);
-              POP_PRIMITIVE_FRAME (n_args);
-              goto pop_return;
+      case TC_PRIMITIVE:
+        if (!IMPLEMENTED_PRIMITIVE_P (proc))
+          APPLICATION_ERROR (ERR_UNIMPLEMENTED_PRIMITIVE);
+        {
+          unsigned long n_args = apply_frame_n_args (ic);
+          if (PRIMITIVE_ARITY (proc) == LEXPR_PRIMITIVE_ARITY)
+            set_primitive_lexpr_actuals (n_args, ic);
+          else if (PRIMITIVE_ARITY (proc) != n_args)
+            APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+
+          // Primitives don't need header and proc:
+          increment_sp (2, ic);
+          // SET_EXP (proc);
+          // APPLY_PRIMITIVE_FROM_INTERPRETER (proc);
+          // POP_PRIMITIVE_FRAME (n_args);
+          // goto pop_return;
+        }
+
+      case TC_EXTENDED_PROCEDURE:
+        {
+          SCHEME_OBJECT lambda = procedure_lambda (proc);
+          unsigned long nnames = VECTOR_LENGTH (elambda_names (lambda));
+          unsigned long reqs = elambda_reqs (lambda);
+          unsigned long opts = elambda_opts (lambda);
+          unsigned long rest = elambda_rest (lambda);
+          unsigned long nfixed = reqs + opts;
+          unsigned long nparams = nfixed + rest;
+          unsigned long naux = nnames - nparams;
+          unsigned long nargs = apply_frame_n_args (ic);
+
+          if ((nargs < reqs) || ((rest == 0) && (nargs > nfixed)))
+            {
+              APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
             }
 
-          case TC_EXTENDED_PROCEDURE:
+          unsigned long size = (/* proc: */ 1 + nparams + naux);
+          unsigned long nwords
+            = 1 /* vector header */
+              + size
+              /* rest list: */
+              + ((nargs > nfixed) ? (2 * (nargs - nfixed)) : 0);
+          if (GC_NEEDED_P (nwords))
             {
-              SCHEME_OBJECT lambda = (GET_PROCEDURE_LAMBDA (proc));
-              unsigned long nnames = (ELAMBDA_N_NAMES (lambda));
-              unsigned long reqs = (ELAMBDA_REQS (lambda));
-              unsigned long opts = (ELAMBDA_OPTS (lambda));
-              unsigned long rest = (ELAMBDA_REST (lambda));
-              unsigned long nfixed = (reqs + opts);
-              unsigned long naux = (nnames - (nfixed + rest));
-              unsigned long nargs
-                = (APPLY_FRAME_HEADER_N_ARGS (stack_pop (stack)));
-
-              if ((nargs < reqs) || ((rest == 0) && (nargs > nfixed)))
-                {
-                  PUSH_APPLY_FRAME_HEADER (nargs);
-                  APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-                }
-
-              unsigned long size = (/* proc: */ 1 + nfixed + rest + naux);
-              unsigned long nwords
-                = (/* vector header: */ 1
-                                        + size
-                                        /* rest list: */
-                                        + ((nargs > nfixed) ? (2 * (nargs - nfixed)) : 0));
-              if (GC_NEEDED_P (nwords))
-                {
-                  PUSH_APPLY_FRAME_HEADER (nargs);
-                  PREPARE_APPLY_INTERRUPT ();
-                  IMMEDIATE_GC (nwords);
-                }
-              SCHEME_OBJECT * scan = Free;
-              SCHEME_OBJECT temp = (MAKE_POINTER_OBJECT (TC_ENVIRONMENT, scan));
-              (*scan++) = (MAKE_OBJECT (TC_MANIFEST_VECTOR, size));
-              if (nargs <= nfixed)
-                {
-                  (*scan++) = (stack_pop (stack)); // proc
-                  for (unsigned int i = 0; i < nargs; i += 1)
-                    (*scan++) = (stack_pop (stack));
-                  for (unsigned int i = nargs; i < nfixed; i += 1)
-                    (*scan++) = DEFAULT_OBJECT;
-                  if (rest == 1)
-                    (*scan++) = EMPTY_LIST;
-                  for (unsigned int i = 0; i < naux; i += 1)
-                    (*scan++) = UNASSIGNED_OBJECT;
-                }
-              else
-                {
-                  /* assert (rest == 1) */
-                  SCHEME_OBJECT list
-                    = (MAKE_POINTER_OBJECT (TC_LIST, (scan + size)));
-                  (*scan++) = (stack_pop (stack)); // proc
-                  for (unsigned int i = 0; i < nfixed; i += 1)
-                    (*scan++) = (stack_pop (stack));
-                  (*scan++) = list;
-                  for (unsigned int i = 0; i < naux; i += 1)
-                    (*scan++) = UNASSIGNED_OBJECT;
-                  /* Now scan == OBJECT_ADDRESS (list) */
-                  for (unsigned int i = nfixed; i < nargs; i += 1)
-                    {
-                      (*scan++) = (stack_pop (stack));
-                      (*scan) = MAKE_POINTER_OBJECT (TC_LIST, (scan + 1));
-                      scan += 1;
-                    }
-                  (scan[-1]) = EMPTY_LIST;
-                }
-              Free = scan;
-              SET_ENV (temp);
-              REDUCES_TO (ELAMBDA_BODY (lambda));
+              PREPARE_APPLY_INTERRUPT ();
+              IMMEDIATE_GC (nwords);
             }
+          increment_sp (1, ic); // discard header
+          SCHEME_OBJECT* scan = Free;
+          SCHEME_OBJECT env = MAKE_POINTER_OBJECT (TC_ENVIRONMENT, scan);
+          *scan++ = MAKE_OBJECT (TC_MANIFEST_VECTOR, size);
+          if (nargs <= nfixed)
+            {
+              *scan++ = stack_pop (ic); // proc
+              for (unsigned int i = 0; i < nargs; i += 1)
+                *scan++ = stack_pop (ic);
+              for (unsigned int i = nargs; i < nfixed; i += 1)
+                *scan++ = DEFAULT_OBJECT;
+              if (rest == 1)
+                *scan++ = EMPTY_LIST;
+              for (unsigned int i = 0; i < naux; i += 1)
+                *scan++ = UNASSIGNED_OBJECT;
+            }
+          else
+            {
+              /* assert (rest == 1) */
+              SCHEME_OBJECT list = MAKE_POINTER_OBJECT (TC_LIST, scan + size);
+              *scan++ = stack_pop (ic); // proc
+              for (unsigned int i = 0; i < nfixed; i += 1)
+                *scan++ = stack_pop (ic);
+              *scan++ = list;
+              for (unsigned int i = 0; i < naux; i += 1)
+                *scan++ = UNASSIGNED_OBJECT;
+              /* Now scan == OBJECT_ADDRESS (list) */
+              for (unsigned int i = nfixed; i < nargs; i += 1)
+                {
+                  *scan++ = stack_pop (ic);
+                  *scan = MAKE_POINTER_OBJECT (TC_LIST, scan + 1);
+                  scan += 1;
+                }
+              scan[-1] = EMPTY_LIST;
+            }
+          Free = scan;
+          return eval_reduction (elambda_body (lambda), env, ic);
+        }
 
 #ifdef CC_SUPPORT_P
-case TC_COMPILED_ENTRY:
-{
-  guarantee_cc_return (1 + (APPLY_FRAME_SIZE ()));
-  dispatch_code = (apply_compiled_procedure ());
+      case TC_COMPILED_ENTRY:
+        {
+          guarantee_cc_return (1 + apply_frame_size (ic));
+          long dispatch_code = apply_compiled_procedure ();
+          switch (dispatch_code)
+            {
+            case PRIM_DONE:
+              return single_val (???, ic);
 
-return_from_compiled_code:
-  switch (dispatch_code)
-    {
-    case PRIM_DONE:
-      goto pop_return;
+            case PRIM_APPLY:
+              return INT_ACTION_APPLY_PROC;
 
-    case PRIM_APPLY:
-      goto internal_apply;
+            case PRIM_INTERRUPT:
+              SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
 
-    case PRIM_INTERRUPT:
-      SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+            case PRIM_APPLY_INTERRUPT:
+              PREPARE_APPLY_INTERRUPT ();
+              SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
 
-    case PRIM_APPLY_INTERRUPT:
-      PREPARE_APPLY_INTERRUPT ();
-      SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+            case ERR_INAPPLICABLE_OBJECT:
+            case ERR_WRONG_NUMBER_OF_ARGUMENTS:
+              APPLICATION_ERROR (dispatch_code);
 
-    case ERR_INAPPLICABLE_OBJECT:
-    case ERR_WRONG_NUMBER_OF_ARGUMENTS:
-      APPLICATION_ERROR (dispatch_code);
-
-    default:
-      Do_Micro_Error (dispatch_code, true);
-      goto internal_apply;
-    }
-}
+            default:
+              Do_Micro_Error (dispatch_code, true);
+              return INT_ACTION_APPLY_PROC;
+            }
+        }
 #endif
 
-          default:
-            APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
-          }
+      default:
+        APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
       }
-
-    case RC_JOIN_STACKLETS:
-      unpack_control_point (GET_EXP);
-      break;
-
-    case RC_NORMAL_GC_DONE:
-      SET_VAL (GET_EXP);
-      /* Paranoia */
-      if (GC_NEEDED_P (gc_space_needed))
-        termination_gc_out_of_space ();
-      gc_space_needed = 0;
-      EXIT_CRITICAL_SECTION ({ PUSH_CONT (GET_RET, GET_EXP); });
-      break;
-
-    case RC_POP_RETURN_ERROR:
-    case RC_RESTORE_VALUE:
-      SET_VAL (GET_EXP);
-      break;
-
-    /* The following two return codes are both used to restore a
-       saved history object.	The difference is that the first does
-       not copy the history object while the second does.  In both
-       cases, the GET_EXP contains the history object and the
-       next item to be popped off the stack contains the offset back
-       to the previous restore history return code.  */
-
-    case RC_RESTORE_DONT_COPY_HISTORY:
-      {
-        prev_restore_history_offset = (OBJECT_DATUM (stack_pop (stack)));
-        (void) stack_pop ();
-        history_register = (OBJECT_ADDRESS (GET_EXP));
-        break;
-      }
-
-    case RC_RESTORE_HISTORY:
-      {
-        if (!restore_history (GET_EXP))
-          {
-            PUSH_CONT (GET_RET, GET_EXP);
-            STACK_CHECK (CONTINUATION_SIZE);
-            PUSH_CONT_RC (RC_RESTORE_VALUE, GET_VAL);
-            IMMEDIATE_GC (HEAP_AVAILABLE);
-          }
-        prev_restore_history_offset = (OBJECT_DATUM (stack_pop (stack)));
-        (void) stack_pop ();
-        if (prev_restore_history_offset > 0)
-          (STACK_LOCATIVE_REFERENCE (STACK_BOTTOM,
-                                     (-prev_restore_history_offset)))
-            = (MAKE_RETURN_CODE (RC_RESTORE_HISTORY));
-        break;
-      }
-
-    case RC_RESTORE_INT_MASK:
-      SET_INTERRUPT_MASK (UNSIGNED_FIXNUM_TO_LONG (GET_EXP));
-      if (GC_NEEDED_P (0))
-        REQUEST_GC (0);
-      if (PENDING_INTERRUPTS_P)
-        {
-          PUSH_CONT_RC (RC_RESTORE_VALUE, GET_VAL);
-          SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
-        }
-      break;
-
-    case RC_STACK_MARKER:
-      /* Frame consists of the return code followed by two objects.
-         The first object has already been popped into GET_EXP,
-         so just pop the second argument.  */
-      stack_pointer = (STACK_LOCATIVE_OFFSET (stack_pointer, 1));
-      break;
-
-    case RC_EXECUTE_SEQUENCE_FINISH:
-      end_subproblem ();
-      SET_ENV (stack_pop (stack));
-      REDUCES_TO_NTH (SEQUENCE_2);
-
-    case RC_SNAP_NEED_THUNK:
-      /* Don't snap thunk twice; evaluation of the thunk's body might
-         have snapped it already.  */
-      if ((MEMORY_REF (GET_EXP, THUNK_SNAPPED)) == SHARP_T)
-        SET_VAL (MEMORY_REF (GET_EXP, THUNK_VALUE));
-      else
-        {
-          MEMORY_SET (GET_EXP, THUNK_SNAPPED, SHARP_T);
-          MEMORY_SET (GET_EXP, THUNK_VALUE, GET_VAL);
-        }
-      break;
-
-    default:
-      POP_RETURN_ERROR (ERR_INAPPLICABLE_CONTINUATION);
-    }
+  }
 }

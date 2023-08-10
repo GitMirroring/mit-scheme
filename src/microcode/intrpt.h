@@ -27,6 +27,12 @@ USA.
 
 /* Interrupt manipulation utilities. */
 
+#ifndef SCM_INTRPT_H
+#define SCM_INTRPT_H 1
+
+#include "context.h"
+#include "registers.h"
+
 /* Interrupt bits -- scanned from LSB (1) to MSB (16) */
 
 #define INT_Stack_Overflow	0x0001UL /* Local interrupt */
@@ -67,56 +73,44 @@ USA.
 #define INTERRUPT_ENABLED_P(mask) ((GET_INT_MASK & (mask)) != 0)
 #define INTERRUPT_PENDING_P(mask) (((PENDING_INTERRUPTS ()) & (mask)) != 0)
 
-#define COMPILER_SETUP_INTERRUPT() do					\
-{									\
-  SET_MEMTOP								\
-    (((PENDING_INTERRUPTS ()) != 0)					\
-     ? memory_block_start						\
-     : (GC_ENABLED_P ())						\
-     ? heap_alloc_limit							\
-     : heap_end);							\
-  SET_STACK_GUARD							\
-    ((INTERRUPT_ENABLED_P (INT_Stack_Overflow))				\
-     ? stack_guard							\
-     : STACK_TOP);							\
+extern void compiler_setup_interrupt(ictx_t*);
+
+#define SET_INTERRUPT_MASK(mask, ic) do                                 \
+{                                                                       \
+  GRAB_INTERRUPT_REGISTERS ();                                          \
+  SET_INT_MASK (mask);                                                  \
+  compiler_setup_interrupt (ic);                                        \
+  RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define SET_INTERRUPT_MASK(mask) do					\
-{									\
-  GRAB_INTERRUPT_REGISTERS ();						\
-  SET_INT_MASK (mask);							\
-  COMPILER_SETUP_INTERRUPT ();						\
-  RELEASE_INTERRUPT_REGISTERS ();					\
+#define REQUEST_INTERRUPT(code, ic) do                                  \
+{                                                                       \
+  GRAB_INTERRUPT_REGISTERS ();                                          \
+  SET_INT_CODE (GET_INT_CODE | (code));                                 \
+  compiler_setup_interrupt (ic);                                        \
+  RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define REQUEST_INTERRUPT(code) do					\
-{									\
-  GRAB_INTERRUPT_REGISTERS ();						\
-  SET_INT_CODE (GET_INT_CODE | (code));					\
-  COMPILER_SETUP_INTERRUPT ();						\
-  RELEASE_INTERRUPT_REGISTERS ();					\
+#define CLEAR_INTERRUPT_NOLOCK(code, ic) do                             \
+{                                                                       \
+  SET_INT_CODE (GET_INT_CODE &~ (code));                                \
+  compiler_setup_interrupt (ic);                                        \
 } while (0)
 
-#define CLEAR_INTERRUPT_NOLOCK(code) do					\
-{									\
-  SET_INT_CODE (GET_INT_CODE &~ (code));				\
-  COMPILER_SETUP_INTERRUPT ();						\
+#define CLEAR_INTERRUPT(code) do                                        \
+{                                                                       \
+  GRAB_INTERRUPT_REGISTERS ();                                          \
+  clear_interrupt_nolock (code);                                        \
+  RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define CLEAR_INTERRUPT(code) do					\
-{									\
-  GRAB_INTERRUPT_REGISTERS ();						\
-  CLEAR_INTERRUPT_NOLOCK (code);					\
-  RELEASE_INTERRUPT_REGISTERS ();					\
-} while (0)
-
-#define INITIALIZE_INTERRUPTS(mask) do					\
-{									\
-  GRAB_INTERRUPT_REGISTERS ();						\
-  SET_INT_MASK (mask);							\
-  SET_INT_CODE (0);							\
-  COMPILER_SETUP_INTERRUPT ();						\
-  RELEASE_INTERRUPT_REGISTERS ();					\
+#define INITIALIZE_INTERRUPTS(mask, ic) do                              \
+{                                                                       \
+  GRAB_INTERRUPT_REGISTERS ();                                          \
+  SET_INT_MASK (mask);                                                  \
+  SET_INT_CODE (0);                                                     \
+  compiler_setup_interrupt (ic);                                        \
+  RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
 #if defined(__WIN32__)
@@ -128,3 +122,5 @@ USA.
 #  define GRAB_INTERRUPT_REGISTERS()
 #  define RELEASE_INTERRUPT_REGISTERS()
 #endif
+
+#endif  // SCM_INTRPT_H

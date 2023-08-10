@@ -68,19 +68,18 @@ Add_a_Pop_Return_Breakpoint (SCHEME_OBJECT * SP)
 extern bool Print_One_Continuation_Frame (SCHEME_OBJECT);
 
 void
-Handle_Pop_Return_Break (void)
+Handle_Pop_Return_Break (ictx_t* ic)
 {
-  SCHEME_OBJECT *Old_Stack = stack_pointer;
-
-  printf ("Pop Return Break: SP = %#lx\n", ((unsigned long) stack_pointer));
-  (void) (Print_One_Continuation_Frame (GET_RET));
-  stack_pointer = Old_Stack;
+  SCHEME_OBJECT* sp = get_sp (ic);
+  printf ("Pop Return Break: SP = %#lx\n", (unsigned long) sp);
+  // (void) Print_One_Continuation_Frame (GET_RET);
+  set_sp (sp, ic);
 }
 
 void
-Pop_Return_Break_Point (void)
+Pop_Return_Break_Point (ictx_t* ic)
 {
-  SCHEME_OBJECT * SP = stack_pointer;
+  SCHEME_OBJECT * SP = get_sp (ic);
   sp_record_list previous = &One_Before;
   sp_record_list this = previous->next; /* = SP_List */
 
@@ -90,7 +89,7 @@ Pop_Return_Break_Point (void)
   {
     if (this->sp == SP)
     {
-      Handle_Pop_Return_Break ();
+      Handle_Pop_Return_Break (ic);
       previous->next = this->next;
       break;
     }

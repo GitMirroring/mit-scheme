@@ -39,32 +39,14 @@ USA.
 
 /* ALPHABETICALLY LISTED BY TYPE CODE NAME */
 
-static inline SCHEME_OBJECT
-_memory_ref_0 (SCHEME_OBJECT exp)
-{
-  return MEMORY_REF (exp, 0);
-}
+#define access_environment memory_ref_0
+#define access_name memory_ref_1
 
-static inline SCHEME_OBJECT
-_memory_ref_1 (SCHEME_OBJECT exp)
-{
-  return MEMORY_REF (exp, 1);
-}
+#define assignment_name memory_ref_0
+#define assignment_value memory_ref_1
 
-static inline SCHEME_OBJECT
-_memory_ref_2 (SCHEME_OBJECT exp)
-{
-  return MEMORY_REF (exp, 2);
-}
-
-#define access_environment _memory_ref_0
-#define access_name _memory_ref_1
-
-#define assignment_name _memory_ref_0
-#define assignment_value _memory_ref_1
-
-#define combination_header _memory_ref_0
-#define combination_operator _memory_ref_1
+#define combination_header memory_ref_0
+#define combination_operator memory_ref_1
 
 static inline unsigned long
 combination_size (SCHEME_OBJECT exp)
@@ -84,24 +66,24 @@ combination_expr (SCHEME_OBJECT exp, unsigned long n)
   return VECTOR_REF (exp, n);
 }
 
-#define comment_expression _memory_ref_0
-#define comment_text _memory_ref_1
+#define comment_expression memory_ref_0
+#define comment_text memory_ref_1
 
-#define conditional_predicate _memory_ref_0
-#define conditional_consequent _memory_ref_1
-#define conditional_alternative _memory_ref_2
+#define conditional_predicate memory_ref_0
+#define conditional_consequent memory_ref_1
+#define conditional_alternative memory_ref_2
 
-#define definition_name _memory_ref_0
-#define definition_value _memory_ref_1
+#define definition_name memory_ref_0
+#define definition_value memory_ref_1
 
-#define delay_object _memory_ref_0
+#define delay_object memory_ref_0
 
-#define disjunction_predicate _memory_ref_0
-#define disjunction_alternative _memory_ref_1
+#define disjunction_predicate memory_ref_0
+#define disjunction_alternative memory_ref_1
 
-#define elambda_body _memory_ref_0
-#define elambda_names _memory_ref_1
-#define elambda_arg_counts _memory_ref_2
+#define elambda_body memory_ref_0
+#define elambda_names memory_ref_1
+#define elambda_arg_counts memory_ref_2
 
 static inline unsigned long
 elambda_reqs (SCHEME_OBJECT exp)
@@ -121,8 +103,8 @@ elambda_rest (SCHEME_OBJECT exp)
   return (elambda_arg_counts (exp) >> 16) & 0x1;
 }
 
-#define lambda_body _memory_ref_0
-#define lambda_names _memory_ref_1
+#define lambda_body memory_ref_0
+#define lambda_names memory_ref_1
 
 static inline SCHEME_OBJECT*
 lambda_params (SCHEME_OBJECT exp)
@@ -133,20 +115,20 @@ lambda_params (SCHEME_OBJECT exp)
 static inline unsigned long
 lambda_n_params (SCHEME_OBJECT exp)
 {
-  return VECTOR_LENGTH (lambda_names (exp), 1) - 1;
+  return VECTOR_LENGTH (lambda_names (exp)) - 1;
 }
 
-#define scode_quote_object _memory_ref_0
+#define scode_quote_object memory_ref_0
 
-#define sequence_1 _memory_ref_0
-#define sequence_2 _memory_ref_1
+#define sequence_1 memory_ref_0
+#define sequence_2 memory_ref_1
 
-#define variable_name _memory_ref_0
+#define variable_name memory_ref_0
 
 static inline bool
 variable_safe_p (SCHEME_OBJECT exp)
 {
-  return _memory_ref_1 (exp) == SHARP_F;
+  return memory_ref_1 (exp) == SHARP_F;
 }
 
 #endif /* not SCM_SCODE_H */

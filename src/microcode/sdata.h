@@ -104,10 +104,11 @@ USA.
  * value of the DELAYED object.  For historical reasons, such an object
  * is called a 'thunk.'
  */
-#define THUNK_SNAPPED		0
-#define THUNK_VALUE		1
-#define THUNK_ENVIRONMENT	0
-#define THUNK_PROCEDURE		1
+
+#define thunk_snapped memory_ref_0
+#define thunk_value memory_ref_1
+#define thunk_environment memory_ref_0
+#define thunk_procedure memory_ref_1
 
 /* ENTITY
    A cons of a procedure and something else.
@@ -115,8 +116,8 @@ USA.
    the entity and the arguments to it.
  */
 
-#define ENTITY_OPERATOR		0
-#define ENTITY_DATA		1
+#define entity_operator memory_ref_0
+#define entity_data memory_ref_1
 
 /* ENVIRONMENT
  * Associates identifiers with values.
@@ -354,14 +355,9 @@ USA.
  * Consists of two parts: a LAMBDA expression and the environment
  * in which the LAMBDA was evaluated to yield the PROCEDURE.
  */
-#define PROCEDURE_LAMBDA_EXPR	0
-#define PROCEDURE_ENVIRONMENT	1
 
-#define GET_PROCEDURE_LAMBDA(procedure)					\
-  (MEMORY_REF ((procedure), PROCEDURE_LAMBDA_EXPR))
-
-#define GET_PROCEDURE_ENVIRONMENT(procedure)				\
-  (MEMORY_REF ((procedure), PROCEDURE_ENVIRONMENT))
+#define procedure_lambda memory_ref_0
+#define procedure_environment memory_ref_1
 
 /* QUAD or HUNK4
  * Like a pair but with 4 components.

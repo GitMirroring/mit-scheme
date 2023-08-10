@@ -266,13 +266,14 @@ termination_signal (const char * signal_name)
 static void
 bind_interpreter_state (interpreter_state_t* s, ictx_t* ic)
 {
-  s->previous_state = interpreter_state (ic);
-  s->nesting_level = interpreter_nesting_level (ic);
-  s->dstack_position = interpreter_dstack_position (ic);
-  ic->state = s;
+  interpreter_state_t* state = interpreter_state (ic);
+  s->previous_state = state;
+  s->nesting_level = state->nesting_level;
+  s->dstack_position = state->dstack_position;
+  set_interpreter_state (s, ic);
 }
 
-void
+static void
 unbind_interpreter_state (interpreter_state_t* s, ictx_t* ic)
 {
   {
@@ -281,14 +282,14 @@ unbind_interpreter_state (interpreter_state_t* s, ictx_t* ic)
     dstack_set_position (s->dstack_position);
     SET_INTERRUPT_MASK (old_mask);
   }
-  ic->state = s->previous_state;
+  set_interpreter_state (s->previous_state, ic);
 }
 
 static void
-edwin_auto_save (void)
+edwin_auto_save (ictx_t* ic)
 {
   static SCHEME_OBJECT position;
-  static struct interpreter_state_s new_state;
+  static interpreter_state_t new_state;
 
   position =
     ((VECTOR_P (fixed_objects))
@@ -312,8 +313,8 @@ edwin_auto_save (void)
 	  unsigned char * gap_end = (start + (GROUP_GAP_END (group)));
 	  if ((start < gap_start) || (gap_end < end))
 	    {
-	      bind_interpreter_state (&new_state);
-	      if ((setjmp (interpreter_catch_env)) == 0)
+	      bind_interpreter_state (&new_state, ic);
+	      if ((setjmp (new_state.catch_env)) == 0)
 		{
 		  Tchannel channel;
 		  outf_error_line ("Auto-saving file \"%s\"", namestring);
@@ -324,17 +325,17 @@ edwin_auto_save (void)
 		    OS_channel_write (channel, gap_end, (end - gap_end));
 		  OS_channel_close (channel);
 		}
-	      unbind_interpreter_state (&new_state);
+	      unbind_interpreter_state (&new_state, ic);
 	    }
 	}
     }
 }
 
 static void
-delete_temp_files (void)
+delete_temp_files (ictx_t* ic)
 {
   static SCHEME_OBJECT position;
-  static struct interpreter_state_s new_state;
+  static interpreter_state_t new_state;
 
   position =
     ((VECTOR_P (fixed_objects))
@@ -346,10 +347,10 @@ delete_temp_files (void)
       position = (PAIR_CDR (position));
       if (STRING_P (entry))
 	{
-	  bind_interpreter_state (&new_state);
-	  if ((setjmp (interpreter_catch_env)) == 0)
+	  bind_interpreter_state (&new_state, ic);
+	  if ((setjmp (new_state.catch_env)) == 0)
 	    OS_file_remove (STRING_POINTER (entry));
-	  unbind_interpreter_state (&new_state);
+	  unbind_interpreter_state (&new_state, ic);
 	}
     }
 }

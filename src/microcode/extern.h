@@ -32,70 +32,6 @@ USA.
 
 #include "outf.h"
 
-/* The register block */
-
-#ifdef __WIN32__
-   extern SCHEME_OBJECT * RegistersPtr;
-#  define Registers RegistersPtr
-#else
-   extern SCHEME_OBJECT Registers [];
-#endif
-
-#define GET_REG_O(i) (Registers[REGBLOCK_##i])
-#define GET_REG_P(i) ((SCHEME_OBJECT *) (Registers[REGBLOCK_##i]))
-#define GET_REG_N(i) ((unsigned long) (Registers[REGBLOCK_##i]))
-
-#define SET_REG_O(i, v) ((Registers[REGBLOCK_##i]) = (v))
-#define SET_REG_P(i, v) (set_ptr_register ((REGBLOCK_##i), (v)))
-#define SET_REG_N(i, v) (set_ulong_register ((REGBLOCK_##i), (v)))
-
-extern void set_ptr_register (unsigned int, SCHEME_OBJECT *);
-extern void set_ulong_register (unsigned int, unsigned long);
-
-#define GET_MEMTOP		GET_REG_P (MEMTOP)
-#define GET_INT_MASK		GET_REG_N (INT_MASK)
-#define GET_VAL			GET_REG_O (VAL)
-#define GET_ENV			GET_REG_O (ENV)
-#define GET_CC_TEMP		GET_REG_O (CC_TEMP)
-#define GET_EXP			GET_REG_O (EXPR)
-#define GET_RET			GET_REG_O (RETURN)
-#define GET_LEXPR_ACTUALS	GET_REG_N (LEXPR_ACTUALS)
-#define GET_PRIMITIVE		GET_REG_O (PRIMITIVE)
-#define GET_CLOSURE_FREE	GET_REG_P (CLOSURE_FREE)
-#define GET_CLOSURE_SPACE	GET_REG_P (CLOSURE_SPACE)
-#define GET_STACK_GUARD		GET_REG_P (STACK_GUARD)
-#define GET_INT_CODE		GET_REG_N (INT_CODE)
-#define GET_REFLECTOR		GET_REG_O (REFLECT_TO_INTERFACE)
-
-#define SET_MEMTOP(v)		SET_REG_P (MEMTOP, v)
-#define SET_INT_MASK(v)		SET_REG_N (INT_MASK, v)
-#define SET_VAL(v)		SET_REG_O (VAL, v)
-#define SET_ENV(v)		SET_REG_O (ENV, v)
-#define SET_CC_TEMP(v)		SET_REG_O (COMPILER_TEMP, v)
-#define SET_EXP(v)		SET_REG_O (EXPR, v)
-#define SET_RET(v)		SET_REG_O (RETURN, v)
-#define SET_LEXPR_ACTUALS(v)	SET_REG_N (LEXPR_ACTUALS, v)
-#define SET_PRIMITIVE(v)	SET_REG_O (PRIMITIVE, v)
-#define SET_CLOSURE_FREE(v)	SET_REG_P (CLOSURE_FREE, v)
-#define SET_CLOSURE_SPACE(v)	SET_REG_P (CLOSURE_SPACE, v)
-#define SET_STACK_GUARD(v)	SET_REG_P (STACK_GUARD, v)
-#define SET_INT_CODE(v)		SET_REG_N (INT_CODE, v)
-#define SET_REFLECTOR(v)	SET_REG_O (REFLECT_TO_INTERFACE, v)
-
-#define PUSH_ENV() STACK_PUSH (GET_ENV)
-#define PUSH_VAL() STACK_PUSH (GET_VAL)
-#define PUSH_EXP() STACK_PUSH (GET_EXP)
-#define PUSH_RET() STACK_PUSH (GET_RET)
-
-#define POP_ENV() SET_ENV (STACK_POP ())
-#define POP_VAL() SET_VAL (STACK_POP ())
-#define POP_EXP() SET_EXP (STACK_POP ())
-#define POP_RET() SET_RET (STACK_POP ())
-
-#define GET_RC (OBJECT_DATUM (GET_RET))
-#define SET_RC(code) SET_RET (MAKE_OBJECT (TC_RETURN_CODE, (code)))
-#define PUSH_RC(code) STACK_PUSH (MAKE_OBJECT (TC_RETURN_CODE, (code)))
-
 #ifdef ENABLE_DEBUGGING_TOOLS
    extern bool Eval_Debug;
    extern bool Hex_Input_Debug;
@@ -115,7 +51,7 @@ extern void set_ulong_register (unsigned int, unsigned long);
    extern bool Print_Errors;
 
    extern bool verify_heap (void);
-   extern void Pop_Return_Break_Point (void);
+   extern void Pop_Return_Break_Point (ictx_t*);
    extern unsigned int debug_slotno;
    extern unsigned int debug_nslots;
    extern unsigned int local_slotno;
@@ -142,15 +78,9 @@ extern void set_ulong_register (unsigned int, unsigned long);
 #endif
 
 extern SCHEME_OBJECT * Free;
-extern SCHEME_OBJECT * Free_primitive;
 extern SCHEME_OBJECT * heap_alloc_limit;
 extern SCHEME_OBJECT * heap_start;
 extern SCHEME_OBJECT * heap_end;
-
-extern SCHEME_OBJECT * stack_pointer;
-extern SCHEME_OBJECT * stack_guard;
-extern SCHEME_OBJECT * stack_start;
-extern SCHEME_OBJECT * stack_end;
 
 extern SCHEME_OBJECT * constant_alloc_next;
 extern SCHEME_OBJECT * constant_start;
@@ -388,9 +318,9 @@ extern void preserve_interrupt_mask (void);
 extern void canonicalize_primitive_context (void);
 extern void back_out_of_primitive (void);
 
-extern void Interpret (void);
+extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
 extern void Do_Micro_Error (long, bool);
-extern void Stack_Death (void) NORETURN;
+extern void Stack_Death (ictx_t*) NORETURN;
 extern SCHEME_OBJECT * control_point_start (SCHEME_OBJECT);
 extern SCHEME_OBJECT * control_point_end (SCHEME_OBJECT);
 extern void unpack_control_point (SCHEME_OBJECT);

@@ -49,10 +49,10 @@ extern sp_record_list SP_List;
     local_nslots += 1;							\
 } while (0)
 
-#define POP_RETURN_UCODE_HOOK() do					\
-{									\
-  if (SP_List != 0)							\
-    Pop_Return_Break_Point ();						\
+#define POP_RETURN_UCODE_HOOK(ic) do                                    \
+{                                                                       \
+  if (SP_List != 0)                                                     \
+    Pop_Return_Break_Point (ic);                                        \
 } while (0)
 
 #endif /* ENABLE_DEBUGGING_TOOLS */

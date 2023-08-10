@@ -110,23 +110,3 @@ USA.
 #if Are_The_Constants_Incompatible
 #include "Error: const.h and types.h disagree"
 #endif
-
-/* These are the only entries in Registers[] needed by the microcode.
-   All other entries are used only by the compiled code interface. */
-
-#define REGBLOCK_MEMTOP			0
-#define REGBLOCK_INT_MASK		1
-#define REGBLOCK_VAL			2
-#define REGBLOCK_ENV			3
-#define REGBLOCK_CC_TEMP		4	/* For use by compiler */
-#define REGBLOCK_EXPR			5
-#define REGBLOCK_RETURN			6
-#define REGBLOCK_LEXPR_ACTUALS		7
-#define REGBLOCK_PRIMITIVE		8
-#define REGBLOCK_CLOSURE_FREE		9	/* For use by compiler */
-#define REGBLOCK_CLOSURE_SPACE		10	/* For use by compiler */
-#define REGBLOCK_STACK_GUARD		11
-#define REGBLOCK_INT_CODE		12
-#define REGBLOCK_REFLECT_TO_INTERFACE	13	/* For use by compiler */
-
-#define REGBLOCK_MINIMUM_LENGTH		14

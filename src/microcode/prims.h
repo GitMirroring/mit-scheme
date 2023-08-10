@@ -37,7 +37,7 @@ USA.
 /* Definition of primitives. */
 
 #define DEFINE_PRIMITIVE(scheme_name, fn_name, min_args, max_args, doc)	\
-SCHEME_OBJECT fn_name (void)
+SCHEME_OBJECT fn_name (ictx_t* ictx)
 
 /* Can be used for `max_args' in `DEFINE_PRIMITIVE' to indicate that
    the primitive has no upper limit on its arity.  */
@@ -46,7 +46,8 @@ SCHEME_OBJECT fn_name (void)
 /* Primitives should have this as their first statement. */
 #ifdef ENABLE_PRIMITIVE_PROFILING
    extern void record_primitive_entry (SCHEME_OBJECT);
-#  define PRIMITIVE_HEADER(n_args) record_primitive_entry (GET_EXP)
+#  define PRIMITIVE_HEADER(n_args)                                      \
+     record_primitive_entry (get_primitive (get_ictx ()))
 #else
 #  define PRIMITIVE_HEADER(n_args) do {} while (0)
 #endif
@@ -85,8 +86,8 @@ SCHEME_OBJECT fn_name (void)
     error_wrong_type_arg (argument);					\
 } while (0)
 
-#define ARG_LOC(argument) (STACK_LOC (argument - 1))
-#define ARG_REF(argument) (STACK_REF (argument - 1))
+#define ARG_LOC(argument) (stack_loc (argument - 1, ictx))
+#define ARG_REF(argument) (stack_ref (argument - 1, ictx))
 
 extern void signal_error_from_primitive (long) NORETURN;
 extern void signal_interrupt_from_primitive (void) NORETURN;

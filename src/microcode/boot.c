@@ -37,20 +37,9 @@ extern void OS_announcement (void);
 extern void initialize_fixed_objects_vector (void);
 extern SCHEME_OBJECT Re_Enter_Interpreter (void);
 extern SCHEME_OBJECT make_microcode_identification_vector (void);
-
-#ifdef __WIN32__
-   extern void NT_initialize_win32_system_utilities (void);
-   extern void NT_initialize_fov (SCHEME_OBJECT);
-   extern void win32_enter_interpreter (void (*) (void));
-#  define HOOK_ENTER_INTERPRETER win32_enter_interpreter
-#endif
-
-#ifndef HOOK_ENTER_INTERPRETER
-#  define HOOK_ENTER_INTERPRETER(func) func ()
-#endif
 
-static void start_scheme (void);
-static void Enter_Interpreter (void);
+static void start_scheme (ictx_t*);
+static void Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
 
 const char * scheme_program_name;
 const char * OS_Name;
@@ -109,14 +98,16 @@ main_name (int argc, const char ** argv)
   reload_saved_string_length = 0;
   read_command_line_options (argc, argv);
 
+  unsigned long stack_size = (BLOCKS_TO_WORDS (option_stack_size));
   setup_memory ((BLOCKS_TO_WORDS (option_heap_size)),
-		(BLOCKS_TO_WORDS (option_stack_size)),
+		stack_size,
 		(BLOCKS_TO_WORDS (option_constant_size)));
+  ictx_t* ic = initialize_ictx (stack_size, memory_block_start);
 
   initialize_primitives ();
   compiler_initialize (option_fasl_file != 0);
   OS_initialize ();
-  start_scheme ();
+  start_scheme (ic);
   termination_init_error ();
   return (0);
 }
@@ -128,7 +119,7 @@ main_name (int argc, const char ** argv)
 #endif
 
 static void
-start_scheme (void)
+start_scheme (ictx_t* ic)
 {
   SCHEME_OBJECT expr;
 
@@ -173,51 +164,36 @@ start_scheme (void)
       (*Free++) = fn_object;
     }
 
-  /* Setup registers */
-  INITIALIZE_INTERRUPTS (0);
-  SET_ENV (THE_GLOBAL_ENV);
+  INITIALIZE_INTERRUPTS (0, ic);
+
+  stack_check (CONTINUATION_SIZE, ic);
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ic);
   trapping = false;
 
-  /* Give the interpreter something to chew on, and ... */
-  Will_Push (CONTINUATION_SIZE);
-  SET_RC (RC_END_OF_COMPUTATION);
-  SET_EXP (SHARP_F);
-  SAVE_CONT ();
-  Pushed ();
-
-  SET_EXP (expr);
-
   /* Go to it! */
-  if (! ((SP_OK_P (stack_pointer)) && (Free <= heap_alloc_limit)))
+  if (! (stack_can_push_p (0, ic) && Free <= heap_alloc_limit))
     {
       outf_fatal ("Configuration won't hold initial data.\n");
       termination_init_error ();
     }
   ENTRY_HOOK ();
-  Enter_Interpreter ();
+  Enter_Interpreter (expr, THE_GLOBAL_ENV, ic);
 }
 
 static void
-Do_Enter_Interpreter (void)
+Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  Interpret ();
+  Interpret (exp, env, ic);
   outf_fatal ("\nThe interpreter returned to top level!\n");
   Microcode_Termination (TERM_EXIT);
 }
 
-static void
-Enter_Interpreter (void)
-{
-  HOOK_ENTER_INTERPRETER (Do_Enter_Interpreter);
-}
-
 /* This must be used with care, and only synchronously. */
-
 SCHEME_OBJECT
-Re_Enter_Interpreter (void)
+Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 {
-  Interpret ();
-  return (GET_VAL);
+  Interpret (exp, env, ic);
+  return get_single_val (ic);
 }
 
 /* Utility primitives. */

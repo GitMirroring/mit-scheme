@@ -37,6 +37,8 @@ USA.
 #include "types.h"		/* Type code numbers */
 #include "const.h"		/* Various named constants */
 #include "object.h"		/* Scheme object representation */
+#include "context.h"            // Per-thread context
+#include "registers.h"          // Register block
 #include "intrpt.h"		/* Interrupt processing macros */
 #include "critsec.h"		/* Critical sections */
 #include "gc.h"			/* Memory management related macros */

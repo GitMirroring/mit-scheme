@@ -189,7 +189,7 @@ reset_allocator_parameters (unsigned long n_constant, unsigned long reserved)
   heap_start = constant_end;
   Free = heap_start;
   heap_end = memory_block_end;
-  
+
   RESET_HEAP_ALLOC_LIMIT ();
   INITIALIZE_STACK ();
   STACK_RESET ();

@@ -238,6 +238,42 @@ extern bool string_p (SCHEME_OBJECT);
 #define MEMORY_SET(obj, i, value) ((MEMORY_REF (obj, i)) = (value))
 #define MEMORY_LOC(obj, i) (& (MEMORY_REF (obj, i)))
 
+static inline SCHEME_OBJECT
+memory_ref_0 (SCHEME_OBJECT obj)
+{
+  return MEMORY_REF (obj, 0);
+}
+
+static inline SCHEME_OBJECT
+memory_ref_1 (SCHEME_OBJECT obj)
+{
+  return MEMORY_REF (obj, 1);
+}
+
+static inline SCHEME_OBJECT
+memory_ref_2 (SCHEME_OBJECT obj)
+{
+  return MEMORY_REF (obj, 2);
+}
+
+static inline void
+memory_set_0 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  MEMORY_SET (obj, 0, val);
+}
+
+static inline void
+memory_set_1 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  MEMORY_SET (obj, 1, val);
+}
+
+static inline void
+memory_set_2 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
+{
+  MEMORY_SET (obj, 2, val);
+}
+
 /* Pair Operations */
 
 #define PAIR_CAR_LOC(pair) (MEMORY_LOC ((pair), CONS_CAR))
