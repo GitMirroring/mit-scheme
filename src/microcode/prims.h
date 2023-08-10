@@ -58,21 +58,22 @@ SCHEME_OBJECT fn_name (ictx_t* ictx)
 
 /* Various utilities */
 
-#define Primitive_GC(Amount) do						\
-{									\
-  if (Free_primitive < heap_start)					\
-    {									\
-      outf_fatal							\
-        ("\nMicrocode requested primitive GC outside primitive!\n");	\
-      Microcode_Termination (TERM_EXIT);				\
-    }									\
-  if (Free < Free_primitive)						\
-    {									\
-      outf_fatal ("\nFree has gone backwards!\n");			\
-      Microcode_Termination (TERM_EXIT);				\
-    }									\
-  REQUEST_GC ((Amount) + (Free - Free_primitive));			\
-  signal_interrupt_from_primitive ();					\
+#define Primitive_GC(Amount) do                                         \
+{                                                                       \
+  SCHEME_OBJECT* Free_primitive = get_primitive_free (get_ictx ());     \
+  if (Free_primitive < heap_start)                                      \
+    {                                                                   \
+      outf_fatal                                                        \
+        ("\nMicrocode requested primitive GC outside primitive!\n");    \
+      Microcode_Termination (TERM_EXIT);                                \
+    }                                                                   \
+  if (Free < Free_primitive)                                            \
+    {                                                                   \
+      outf_fatal ("\nFree has gone backwards!\n");                      \
+      Microcode_Termination (TERM_EXIT);                                \
+    }                                                                   \
+  REQUEST_GC ((Amount) + (Free - Free_primitive));                      \
+  signal_interrupt_from_primitive ();                                   \
 } while (0)
 
 #define Primitive_GC_If_Needed(Amount) do				\

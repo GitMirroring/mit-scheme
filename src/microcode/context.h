@@ -134,6 +134,12 @@ get_stack_guard (bool stack_overflow_enabled, ictx_t* ic)
   return stack_overflow_enabled ? ic->stack_guard : ic->stack_start;
 }
 
+static inline SCHEME_OBJECT*
+get_stack_end (ictx_t* ic)
+{
+  return ic->stack_end;
+}
+
 static inline bool
 stack_can_push_p (unsigned long n, ictx_t* ic)
 {

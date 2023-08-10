@@ -216,10 +216,10 @@ static SCHEME_OBJECT * fasdump_saved_Free;
 static SCHEME_OBJECT * fasdump_saved_heap_alloc_limit;
 static SCHEME_OBJECT * fasdump_saved_heap_start;
 static SCHEME_OBJECT * fasdump_saved_heap_end;
-static SCHEME_OBJECT * fasdump_saved_stack_pointer;
-static SCHEME_OBJECT * fasdump_saved_stack_guard;
-static SCHEME_OBJECT * fasdump_saved_stack_start;
-static SCHEME_OBJECT * fasdump_saved_stack_end;
+// static SCHEME_OBJECT * fasdump_saved_stack_pointer;
+// static SCHEME_OBJECT * fasdump_saved_stack_guard;
+// static SCHEME_OBJECT * fasdump_saved_stack_start;
+// static SCHEME_OBJECT * fasdump_saved_stack_end;
 static SCHEME_OBJECT * fasdump_saved_constant_alloc_next;
 static SCHEME_OBJECT * fasdump_saved_constant_start;
 static SCHEME_OBJECT * fasdump_saved_constant_end;
@@ -233,10 +233,10 @@ save_gc_vars (void)
   SAVE_GC_VAR (heap_alloc_limit);
   SAVE_GC_VAR (heap_start);
   SAVE_GC_VAR (heap_end);
-  SAVE_GC_VAR (stack_pointer);
-  SAVE_GC_VAR (stack_guard);
-  SAVE_GC_VAR (stack_start);
-  SAVE_GC_VAR (stack_end);
+  // SAVE_GC_VAR (stack_pointer);
+  // SAVE_GC_VAR (stack_guard);
+  // SAVE_GC_VAR (stack_start);
+  // SAVE_GC_VAR (stack_end);
   SAVE_GC_VAR (constant_alloc_next);
   SAVE_GC_VAR (constant_start);
   SAVE_GC_VAR (constant_end);
@@ -256,10 +256,10 @@ compare_gc_vars (void)
   COMPARE_GC_VAR (heap_alloc_limit);
   COMPARE_GC_VAR (heap_start);
   COMPARE_GC_VAR (heap_end);
-  COMPARE_GC_VAR (stack_pointer);
-  COMPARE_GC_VAR (stack_guard);
-  COMPARE_GC_VAR (stack_start);
-  COMPARE_GC_VAR (stack_end);
+  // COMPARE_GC_VAR (stack_pointer);
+  // COMPARE_GC_VAR (stack_guard);
+  // COMPARE_GC_VAR (stack_start);
+  // COMPARE_GC_VAR (stack_end);
   COMPARE_GC_VAR (constant_alloc_next);
   COMPARE_GC_VAR (constant_start);
   COMPARE_GC_VAR (constant_end);
@@ -524,23 +524,18 @@ When the file is reloaded, PROCEDURE is called with an argument of #F.")
 
   Primitive_GC_If_Needed (5);
   initialize_fasl_header (true, true);
-  {
-    SCHEME_OBJECT comb;
-    SCHEME_OBJECT root;
 
-    comb = (MAKE_POINTER_OBJECT (TC_COMBINATION, to));
-    (to[COMB_VECTOR_HEADER]) = MAKE_OBJECT(TC_MANIFEST_VECTOR, 2);
-    (to[COMB_FN_SLOT]) = (ARG_REF (1));
-    (to[COMB_ARG_1_SLOT]) = SHARP_F;
-    to += 3;
+  SCHEME_OBJECT comb = (MAKE_POINTER_OBJECT (TC_COMBINATION, to));
+  *to++ = MAKE_OBJECT (TC_MANIFEST_VECTOR, 2);
+  *to++ = ARG_REF (1);
+  *to++ = SHARP_F;
 
-    root = (MAKE_POINTER_OBJECT (TC_LIST, to));
-    (*to++) = comb;
-    (*to++) = compiler_utilities;
+  SCHEME_OBJECT root = (MAKE_POINTER_OBJECT (TC_LIST, to));
+  (*to++) = comb;
+  (*to++) = compiler_utilities;
 
-    (FASLHDR_ROOT_POINTER (fh)) = to;
-    (*to++) = root;
-  }
+  (FASLHDR_ROOT_POINTER (fh)) = to;
+  (*to++) = root;
 
   prim_table_start = to;
   (FASLHDR_N_PRIMITIVES (fh)) = MAX_PRIMITIVE;
@@ -604,8 +599,8 @@ initialize_fasl_header (bool cc_p, bool band_p)
 #endif
   (FASLHDR_HEAP_RESERVED (fh)) = (band_p ? heap_reserved : 0);
 
-  (FASLHDR_STACK_START (fh)) = stack_start;
-  (FASLHDR_STACK_END (fh)) = stack_end;
+  // (FASLHDR_STACK_START (fh)) = stack_start;
+  // (FASLHDR_STACK_END (fh)) = stack_end;
 
   if (cc_p)
     {

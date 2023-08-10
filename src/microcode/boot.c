@@ -164,7 +164,7 @@ start_scheme (ictx_t* ic)
       (*Free++) = fn_object;
     }
 
-  INITIALIZE_INTERRUPTS (0, ic);
+  INITIALIZE_INTERRUPTS (0);
 
   stack_check (CONTINUATION_SIZE, ic);
   push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ic);

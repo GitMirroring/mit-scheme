@@ -50,7 +50,7 @@ USA.
    extern bool Bignum_Debug;
    extern bool Print_Errors;
 
-   extern bool verify_heap (void);
+   extern bool verify_heap (ictx_t*);
    extern void Pop_Return_Break_Point (ictx_t*);
    extern unsigned int debug_slotno;
    extern unsigned int debug_nslots;
@@ -327,12 +327,12 @@ extern void unpack_control_point (SCHEME_OBJECT);
 
 /* Debugging utilities */
 
-extern void Back_Trace (outf_channel);
-extern void Debug_Stack_Trace (void);
-extern void Debug_Print (SCHEME_OBJECT, bool);
+extern void Back_Trace (outf_channel, SCHEME_OBJECT*);
+extern void Debug_Stack_Trace (SCHEME_OBJECT*);
 extern void Show_Env (SCHEME_OBJECT);
-extern void Print_Return (const char *);
+extern void Print_Return (SCHEME_OBJECT, const char *);
 extern void Print_Expression (SCHEME_OBJECT, const char *);
-extern void Print_Primitive (SCHEME_OBJECT);
+extern void Print_Primitive (SCHEME_OBJECT, ictx_t*);
+
 
 #endif /* not SCM_EXTERN_H */

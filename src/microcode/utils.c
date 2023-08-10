@@ -690,7 +690,7 @@ Do_Micro_Error (long error_code, bool from_pop_return_p)
 	  Print_Expression (GET_ENV, "Environment");
 	  outf_error ("\n");
 	}
-      Print_Return ("Return code");
+      Print_Return (GET_RET, "Return code");
       outf_error ("\n");
     }
 #endif
@@ -769,7 +769,7 @@ reset_history (ictx_t* ic)
   set_restore_history_offset (ULONG_TO_FIXNUM (0), ic);
 }
 
-SCHEME_OBJECT *
+SCHEME_OBJECT
 make_dummy_history (void)
 {
   SCHEME_OBJECT rib
@@ -781,7 +781,7 @@ make_dummy_history (void)
                            make_history (rib, SHARP_F, SHARP_F));
   set_history_next (history, history);
   set_history_prev (history, history);
-  return OBJECT_ADDRESS (history);
+  return history;
 }
 
 /* save_history places a restore history frame on the stack. Such a
@@ -974,7 +974,7 @@ primitive_apply_internal (SCHEME_OBJECT primitive, ictx_t* ic)
 {
 #ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
-    Print_Primitive (primitive);
+    Print_Primitive (primitive, ic);
 #endif
   interpreter_state_t* state = interpreter_state (ic);
   void* position = state->dstack_position;

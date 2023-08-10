@@ -49,7 +49,7 @@ stack_check (unsigned long n, ictx_t* ic)
     {
       if (stack_overwritten_p (ic))
         stack_death ("stack_check");
-      REQUEST_INTERRUPT (INT_Stack_Overflow, ic);
+      REQUEST_INTERRUPT (INT_Stack_Overflow);
     }
 }
 

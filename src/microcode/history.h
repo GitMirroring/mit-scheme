@@ -35,9 +35,9 @@ static inline SCHEME_OBJECT*
 make_history (SCHEME_OBJECT rib, SCHEME_OBJECT next, SCHEME_OBJECT prev)
 {
   SCHEME_OBJECT* history = Free;
-  Free++ = rib;
-  Free++ = next;
-  Free++ = prev;
+  *Free++ = rib;
+  *Free++ = next;
+  *Free++ = prev;
   return history;
 }
 
@@ -45,9 +45,9 @@ static inline SCHEME_OBJECT*
 make_history_rib (SCHEME_OBJECT exp, SCHEME_OBJECT env, SCHEME_OBJECT next)
 {
   SCHEME_OBJECT* rib = Free;
-  Free++ = exp;
-  Free++ = env;
-  Free++ = next;
+  *Free++ = exp;
+  *Free++ = env;
+  *Free++ = next;
   return rib;
 }
 
@@ -122,7 +122,7 @@ unmark_history_rib (SCHEME_OBJECT rib)
 #endif
 
 extern void reset_history (ictx_t*);
-extern SCHEME_OBJECT * make_dummy_history (void);
+extern SCHEME_OBJECT make_dummy_history (void);
 extern void save_history (unsigned long, ictx_t*);
 extern bool restore_history (SCHEME_OBJECT, ictx_t*);
 extern void stop_history (ictx_t*);

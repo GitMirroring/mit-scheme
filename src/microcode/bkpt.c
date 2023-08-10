@@ -65,14 +65,11 @@ Add_a_Pop_Return_Breakpoint (SCHEME_OBJECT * SP)
 /* A breakpoint can be placed here from a C debugger to examine
    the state of the world. */
 
-extern bool Print_One_Continuation_Frame (SCHEME_OBJECT);
-
 void
 Handle_Pop_Return_Break (ictx_t* ic)
 {
   SCHEME_OBJECT* sp = get_sp (ic);
   printf ("Pop Return Break: SP = %#lx\n", (unsigned long) sp);
-  // (void) Print_One_Continuation_Frame (GET_RET);
   set_sp (sp, ic);
 }
 

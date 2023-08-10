@@ -75,26 +75,26 @@ USA.
 
 extern void compiler_setup_interrupt(ictx_t*);
 
-#define SET_INTERRUPT_MASK(mask, ic) do                                 \
+#define SET_INTERRUPT_MASK(mask) do                                     \
 {                                                                       \
   GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_MASK (mask);                                                  \
-  compiler_setup_interrupt (ic);                                        \
+  compiler_setup_interrupt (get_ictx ());                               \
   RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define REQUEST_INTERRUPT(code, ic) do                                  \
+#define REQUEST_INTERRUPT(code) do                                      \
 {                                                                       \
   GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_CODE (GET_INT_CODE | (code));                                 \
-  compiler_setup_interrupt (ic);                                        \
+  compiler_setup_interrupt (get_ictx ());                               \
   RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define CLEAR_INTERRUPT_NOLOCK(code, ic) do                             \
+#define CLEAR_INTERRUPT_NOLOCK(code) do                                 \
 {                                                                       \
   SET_INT_CODE (GET_INT_CODE &~ (code));                                \
-  compiler_setup_interrupt (ic);                                        \
+  compiler_setup_interrupt (get_ictx ());                               \
 } while (0)
 
 #define CLEAR_INTERRUPT(code) do                                        \
@@ -104,12 +104,12 @@ extern void compiler_setup_interrupt(ictx_t*);
   RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
-#define INITIALIZE_INTERRUPTS(mask, ic) do                              \
+#define INITIALIZE_INTERRUPTS(mask) do                                  \
 {                                                                       \
   GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_MASK (mask);                                                  \
   SET_INT_CODE (0);                                                     \
-  compiler_setup_interrupt (ic);                                        \
+  compiler_setup_interrupt (get_ictx ());                               \
   RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 

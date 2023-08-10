@@ -202,17 +202,17 @@ print_return_name (outf_channel stream, SCHEME_OBJECT Ptr)
 }
 
 void
-Print_Return (const char * String)
+Print_Return (SCHEME_OBJECT ret, const char * String)
 {
   outf_error ("%s: ", String);
-  print_return_name (ERROR_OUTPUT, GET_RET);
+  print_return_name (ERROR_OUTPUT, ret);
   outf_error ("\n");
 }
 
 static void
 print_simple (outf_channel stream, SCHEME_OBJECT object)
 {
-  unsigned int type = (OBJECT_TYPE (object));
+  unsigned int type = OBJECT_TYPE (object);
   const char * name = 0;
   if (type < TYPE_CODE_LIMIT)
     name = (type_names[type]);
@@ -365,18 +365,17 @@ DEFINE_PRIMITIVE ("DEBUGGING-PRINTER", Prim_debugging_printer, 1, 1,
 }
 
 static void
-print_expression (outf_channel stream,
-		  SCHEME_OBJECT expression, const char * string)
+print_expression (outf_channel stream, SCHEME_OBJECT expr, const char* prefix)
 {
-  if ((string [0]) != 0)
-    outf (stream, "%s: ", string);
-  print_object (stream, expression);
+  if ((prefix [0]) != 0)
+    outf (stream, "%s: ", prefix);
+  print_object (stream, expr);
 }
 
 void
-Print_Expression (SCHEME_OBJECT expression, const char * string)
+Print_Expression (SCHEME_OBJECT expr, const char* prefix)
 {
-  print_expression (ERROR_OUTPUT, expression, string);
+  print_expression (ERROR_OUTPUT, expr, prefix);
 }
 
 static void
@@ -485,62 +484,48 @@ anonymous_procedure_name_p (SCHEME_OBJECT name)
 static void
 print_lambda (outf_channel stream, SCHEME_OBJECT lambda)
 {
-  SCHEME_OBJECT names = (GET_LAMBDA_FORMALS (lambda));
-  unsigned n_names = (VECTOR_LENGTH (names));
-
-  SCHEME_OBJECT name = (VECTOR_REF (names, 0));
-  bool anon = anonymous_procedure_name_p (name);
-  if (n_names == 1)
+  SCHEME_OBJECT names = lambda_names (lambda);
+  SCHEME_OBJECT* scan = VECTOR_LOC (names, 0);
+  SCHEME_OBJECT* end = VECTOR_LOC (names, VECTOR_LENGTH (names));
+  SCHEME_OBJECT lambda_name = *scan++;
+  if (anonymous_procedure_name_p (lambda_name))
     {
-      if (anon)
-        outf (stream, "[lambda () ");
-      else
-        {
-          outf (stream, "[named-lambda (");
-          print_symbol (stream, name);
-          outf (stream, ")");
-        }
+      outf (stream, "[lambda (");
+      if (scan < end)
+        print_symbol (stream, *scan++);
     }
   else
     {
-      if (anon)
-        outf (stream, "[lambda (");
-      else
-        {
-          outf (stream, "[named-lambda (");
-          print_symbol (stream, name);
-          outf (stream, " ");
-        }
-      for (unsigned i = 1; i < n_names; i++)
-        {
-          if (i > 1)
-            outf (stream, " ");
-          print_symbol (stream, (VECTOR_REF (names, i)));
-        }
-      outf (stream, ")");
+      outf (stream, "[named-lambda (");
+      print_symbol (stream, lambda_name);
     }
-  outf (stream, " %#lx]", (OBJECT_DATUM (lambda)));
+  while (scan < end)
+    {
+      outf (stream, " ");
+      print_symbol (stream, *scan++);
+    }
+  outf (stream, ") %#lx]", OBJECT_DATUM (lambda));
 }
 
 static void
-print_extended_lambda (outf_channel stream, SCHEME_OBJECT elambda)
+print_extended_lambda (outf_channel stream, SCHEME_OBJECT lambda)
 {
-  SCHEME_OBJECT names = (Get_Names_Elambda (elambda));
-  unsigned n_req = (Elambda_Formals_Count (elambda));
-  unsigned n_opt = (Elambda_Opts_Count (elambda));
-  unsigned n_rest = (Elambda_Rest_Flag (elambda));
-  unsigned n_names = (n_req + n_opt + n_rest);
-  unsigned n_params = (n_names - 1);
+  SCHEME_OBJECT names = elambda_names (lambda);
+  SCHEME_OBJECT* scan = VECTOR_LOC (names, 0);
+  SCHEME_OBJECT lambda_name = *scan++;
+  bool anon = anonymous_procedure_name_p (lambda_name);
 
-  SCHEME_OBJECT name = (VECTOR_REF (names, 0));
-  bool anon = anonymous_procedure_name_p (name);
-  if (anon && (n_params == n_rest))
+  SCHEME_OBJECT* end_reqs = scan + elambda_reqs (lambda);
+  SCHEME_OBJECT* end_opts = end_reqs + elambda_opts (lambda);
+  SCHEME_OBJECT* end_rest = end_opts + elambda_rest (lambda);
+
+  if (anon && scan == end_opts)
     {
       outf (stream, "[lambda ");
-      if (n_rest == 0)
+      if (end_opts == end_rest)
         outf (stream, "()");
       else
-        print_symbol (stream, (VECTOR_REF (names, 1)));
+        print_symbol (stream, *scan);
     }
   else
     {
@@ -549,31 +534,29 @@ print_extended_lambda (outf_channel stream, SCHEME_OBJECT elambda)
       else
         {
           outf (stream, "[named-lambda (");
-          print_symbol (stream, name);
+          print_symbol (stream, lambda_name);
           outf (stream, " ");
         }
-
-      unsigned end_req = (1 + n_req);
-      unsigned end_opt = (end_req + n_opt);
-      for (unsigned i = 1; i < n_names; i++)
+      SCHEME_OBJECT* first = scan;
+      while (scan < end_rest)
         {
-          if (i > 1)
+          if (scan > first)
             outf (stream, " ");
-          if (i == end_req && n_opt > 0)
-            outf (stream, "%s ", (constant_string (OPTIONAL_MARKER)));
-          else if (i == end_opt && n_rest > 0)
+          if (scan == end_reqs && scan < end_opts)
+            outf (stream, "%s ", constant_string (OPTIONAL_MARKER));
+          else if (scan == end_opts && scan < end_rest)
             outf (stream, ". ");
-          print_symbol (stream, (VECTOR_REF (names, i)));
+          print_symbol (stream, *scan++);
         }
       outf (stream, ")");
     }
-  outf (stream, " %#lx]", (OBJECT_DATUM (elambda)));
+  outf (stream, " %#lx]", OBJECT_DATUM (lambda));
 }
 
 static void
 print_object (outf_channel stream, SCHEME_OBJECT obj)
 {
-  const char* s = (constant_string (obj));
+  const char* s = constant_string (obj);
   if (s != 0)
     {
       outf (stream, "%s", s);
@@ -584,8 +567,7 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
       outf (stream, "[return-to-interpreter]");
       return;
     }
-
-  else if (obj == reflect_to_interface)
+  if (obj == reflect_to_interface)
     {
       outf (stream, "[reflect-to-interface]");
       return;
@@ -595,20 +577,20 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
     {
     case TC_ACCESS:
       outf (stream, "[access ");
-      print_symbol (stream, (MEMORY_REF (obj, ACCESS_NAME)));
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_symbol (stream, access_name (obj));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_ASSIGNMENT:
       outf (stream, "[set! ");
-      print_symbol (stream, (VARIABLE_SYMBOL (MEMORY_REF (obj, ASSIGN_NAME))));
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_symbol (stream, (variable_name (assignment_name (obj))));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_DEFINITION:
       outf (stream, "[define ");
-      print_symbol (stream, (MEMORY_REF (obj, DEFINE_NAME)));
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_symbol (stream, definition_name (obj));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_CHARACTER_STRING:
@@ -624,11 +606,11 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
       return;
 
     case TC_FIXNUM:
-      outf (stream, "%ld", ((long) (FIXNUM_TO_LONG (obj))));
+      outf (stream, "%ld", ((long) FIXNUM_TO_LONG (obj)));
       return;
 
     case TC_BIG_FLONUM:
-      outf (stream, "%lf", (FLONUM_TO_DOUBLE (obj)));
+      outf (stream, "%lf", FLONUM_TO_DOUBLE (obj));
       return;
 
     case TC_WEAK_CONS:
@@ -647,7 +629,7 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
     case TC_UNINTERNED_SYMBOL:
       outf (stream, "[uninterned ");
       print_symbol (stream, obj);
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_INTERNED_SYMBOL:
@@ -656,29 +638,26 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
 
     case TC_VARIABLE:
       outf (stream, "[variable ");
-      print_symbol (stream, (VARIABLE_SYMBOL (obj)));
-      if (VARIABLE_SAFE_P (obj))
+      print_symbol (stream, variable_name (obj));
+      if (variable_safe_p (obj))
         outf (stream, " (safe)");
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_COMBINATION:
       outf (stream, "[combination ");
-      print_object (stream, (MEMORY_REF (obj, COMB_FN_SLOT)));
-      outf (stream, " ... (%ld args)", (VECTOR_LENGTH (obj)) - 1);
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_object (stream, combination_expr (obj, 0));
+      outf (stream, " ... (%ld args)", combination_size (obj) - 1);
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_ENVIRONMENT:
       outf (stream, "[environment from ");
-      {
-	SCHEME_OBJECT procedure;
-	procedure = (MEMORY_REF (obj, ENVIRONMENT_FUNCTION));
-	if ((OBJECT_TYPE (procedure)) == TC_QUAD)
-	  procedure = (MEMORY_REF (procedure, ENV_EXTENSION_PROCEDURE));
-	print_object (stream, procedure);
-      }
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_object (stream,
+                    extended_frame_p (obj)
+                    ? extended_frame_proc (obj)
+                    : env_proc (obj));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_EXTENDED_LAMBDA:
@@ -687,8 +666,8 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
 
     case TC_EXTENDED_PROCEDURE:
       outf (stream, "[extended-procedure ");
-      print_object (stream, (MEMORY_REF (obj, PROCEDURE_LAMBDA_EXPR)));
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_object (stream, procedure_lambda (obj));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_LAMBDA:
@@ -703,19 +682,19 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
 
     case TC_PROCEDURE:
       outf (stream, "[procedure ");
-      print_object (stream, (MEMORY_REF (obj, PROCEDURE_LAMBDA_EXPR)));
-      outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+      print_object (stream, (procedure_lambda (obj)));
+      outf (stream, " %#lx]", OBJECT_DATUM (obj));
       return;
 
     case TC_REFERENCE_TRAP:
-      if ((OBJECT_DATUM (obj)) <= TRAP_MAX_IMMEDIATE)
+      if (OBJECT_DATUM (obj) <= TRAP_MAX_IMMEDIATE)
 	print_simple (stream, obj);
       else
 	{
 	  outf (stream, "[reference-trap");
 	  print_expression (stream, (MEMORY_REF (obj, TRAP_TAG)), " tag");
 	  print_expression (stream, (MEMORY_REF (obj, TRAP_EXTRA)), " extra");
-	  outf (stream, " %#lx]", (OBJECT_DATUM (obj)));
+	  outf (stream, " %#lx]", OBJECT_DATUM (obj));
 	}
       return;
 
@@ -731,7 +710,7 @@ print_object (outf_channel stream, SCHEME_OBJECT obj)
 
     case TC_CHARACTER:
       {
-        unsigned long code = (OBJECT_DATUM (obj));
+        unsigned long code = OBJECT_DATUM (obj);
         const char* name;
         switch (code)
           {
@@ -785,124 +764,56 @@ Print (SCHEME_OBJECT Expr)
 }
 
 static bool
-print_one_continuation_frame (outf_channel stream, SCHEME_OBJECT Temp)
+print_one_continuation_frame (outf_channel stream, SCHEME_OBJECT ret,
+                              SCHEME_OBJECT* sp)
 {
-  SCHEME_OBJECT Expr;
-
   outf (stream, "\n    ");
-  print_expression (stream, Temp, "Return code");
+  print_expression (stream, ret, "Return code");
   outf (stream, "\n    ");
-  Expr = (STACK_POP ());
-  print_expression (stream, Expr, "Expression");
+  SCHEME_OBJECT exp = *sp++;
+  print_expression (stream, exp, "Expression");
   outf (stream, "\n");
-  if (((OBJECT_DATUM (Temp)) == RC_END_OF_COMPUTATION)
-      || ((OBJECT_DATUM (Temp)) == RC_HALT))
+  if ((OBJECT_DATUM (ret) == RC_END_OF_COMPUTATION)
+      || (OBJECT_DATUM (ret) == RC_HALT))
     return (true);
-  if ((OBJECT_DATUM (Temp)) == RC_JOIN_STACKLETS)
-    stack_pointer = (control_point_start (Expr));
+  if (OBJECT_DATUM (ret) == RC_JOIN_STACKLETS)
+    sp = control_point_start (exp);
   return (false);
 }
-
-extern bool Print_One_Continuation_Frame (SCHEME_OBJECT);
-
-bool
-Print_One_Continuation_Frame (SCHEME_OBJECT Temp)
-{
-  return (print_one_continuation_frame (ERROR_OUTPUT, Temp));
-}
 
-/* Code to dump the Scheme stack. */
-
-static void
-dump_stack (outf_channel stream,
-	    SCHEME_OBJECT *sp,
-	    SCHEME_OBJECT *limit,
-	    int count)
-{
-  int done = 0;
-  while (((count == 0) || (done < count))
-	 && (STACK_LOCATIVE_ABOVE_P (sp, limit)))
-    {
-      SCHEME_OBJECT obj;
-      outf (stream, "%#lx: ", ((unsigned long) sp));
-      obj = (STACK_LOCATIVE_POP (sp));
-      print_object (stream, obj);
-      outf (stream, "\n");
-      done += 1;
-      if ((RETURN_CODE_P (obj))
-	  && ((OBJECT_DATUM (obj)) == RC_JOIN_STACKLETS))
-	{
-	  SCHEME_OBJECT cp = (STACK_LOCATIVE_POP (sp));
-	  sp = (control_point_start (cp));
-	  limit = (control_point_end (cp));
-	}
-    }
-}
-
-void
-Stack (int count)
-{
-  dump_stack (ERROR_OUTPUT, stack_pointer, stack_end, count);
-}
-
 /* Back_Trace relies on (a) only a call to SAVE_CONT puts a return code on the
    stack; (b) SAVE_CONT pushes the expression first.  */
 
 void
-Back_Trace (outf_channel stream)
+Back_Trace (outf_channel stream, SCHEME_OBJECT* sp)
 {
-  SCHEME_OBJECT Temp, * Old_Stack;
-
-  Old_Stack = stack_pointer;
   while (true)
     {
-#if 0
-      /* Not useful since this code prints the contents of control
-	 points as well.  */
-      if (!ADDRESS_IN_STACK_P (stack_pointer))
+      outf (stream, "{%#lx}", ((unsigned long) sp));
+      SCHEME_OBJECT obj = *sp++;
+      if (RETURN_CODE_P (obj))
 	{
-	  if (stack_pointer == Old_Stack)
-	    outf (stream, "\n[Invalid stack pointer.]\n");
-	  else
-	    outf (stream, "\n[Stack ends abruptly.]\n");
-	  break;
-	}
-#endif
-      outf (stream, "{%#lx}", ((unsigned long) stack_pointer));
-      Temp = (STACK_POP ());
-      if (RETURN_CODE_P (Temp))
-	{
-	  if (print_one_continuation_frame (stream, Temp))
+	  if (print_one_continuation_frame (stream, obj, sp))
 	    break;
 	}
       else
 	{
-	  print_expression (stream, Temp, "  ...");
-	  if ((OBJECT_TYPE (Temp)) == TC_MANIFEST_NM_VECTOR)
+	  print_expression (stream, obj, "  ...");
+	  if (OBJECT_TYPE (obj) == TC_MANIFEST_NM_VECTOR)
 	    {
 	      outf (stream, " (skipping)");
-	      stack_pointer = (STACK_LOC (OBJECT_DATUM (Temp)));
+              sp = sp + OBJECT_DATUM (obj);
 	    }
 	  outf (stream, "\n");
 	}
     }
-  stack_pointer = Old_Stack;
   outf_flush (stream);
 }
 
 void
-print_stack (SCHEME_OBJECT * sp)
+Debug_Stack_Trace(SCHEME_OBJECT* sp)
 {
-  SCHEME_OBJECT * saved_sp = stack_pointer;
-  stack_pointer = sp;
-  Back_Trace (ERROR_OUTPUT);
-  stack_pointer = saved_sp;
-}
-
-extern void
-Debug_Stack_Trace(void)
-{
-  print_stack(STACK_LOC(0));
+  Back_Trace (ERROR_OUTPUT, sp);
 }
 
 static bool
@@ -922,25 +833,23 @@ print_primitive_name (outf_channel stream, SCHEME_OBJECT primitive)
 }
 
 void
-Print_Primitive (SCHEME_OBJECT primitive)
+Print_Primitive (SCHEME_OBJECT primitive, ictx_t* ic)
 {
-  char buffer[40];
-  int NArgs, i;
-
   outf_error ("Primitive: ");
-  if (print_primitive_name (ERROR_OUTPUT, primitive))
-    NArgs = (PRIMITIVE_ARITY (primitive));
-  else
-    NArgs = 3;	        /* Unknown primitive */
-
+  unsigned int nargs
+    = print_primitive_name (ERROR_OUTPUT, primitive)
+      ? PRIMITIVE_ARITY (primitive)
+      // Unknown primitive:
+      : 3;
   outf_error ("\n");
 
-  for (i = 0; i < NArgs; i++)
-  {
-    sprintf (buffer, "...Arg %ld", ((long) (i + 1)));
-    print_expression (ERROR_OUTPUT, (STACK_REF (i)), buffer);
-    outf_error ("\n");
-  }
+  char buffer[40];
+  for (unsigned int i = 0; i < nargs; i++)
+    {
+      sprintf (buffer, "...Arg %ld", ((long) (i + 1)));
+      print_expression (ERROR_OUTPUT, stack_ref (i, ic), buffer);
+      outf_error ("\n");
+    }
 }
 
 /* Code for scanning the heap for obviously broken or invalid objects. */
@@ -948,24 +857,22 @@ Print_Primitive (SCHEME_OBJECT primitive)
 #ifdef ENABLE_DEBUGGING_TOOLS
 
 static void
-dump_word (SCHEME_OBJECT *addr)
+dump_word (SCHEME_OBJECT* addr)
 {
-  int i = 0;
-  unsigned char * bytes = (unsigned char *)addr;
-  outf_error ("%#lx: ", (unsigned long)addr);
-  while (i < sizeof(SCHEME_OBJECT))
+  outf_error ("%#lx: ", (unsigned long) addr);
+  unsigned char* bytes = (unsigned char*) addr;
+  for (unsigned int i = 0; i < sizeof (SCHEME_OBJECT); i += 1)
     {
       if (isgraph (bytes[i]))
 	outf_error (" %2c", bytes[i]);
       else
 	outf_error (" %02x", bytes[i]);
-      i += 1;
     }
   outf_error ("\n");
 }
 
 static SCHEME_OBJECT *
-next_addr (SCHEME_OBJECT * addr)
+next_addr (SCHEME_OBJECT* addr)
 {
   SCHEME_OBJECT object = *addr;
   unsigned int type = OBJECT_TYPE (object);
@@ -975,33 +882,30 @@ next_addr (SCHEME_OBJECT * addr)
     case TC_LINKAGE_SECTION:
       {
 	linkage_section_type_t section_type
-	  = ((linkage_section_type_t)((OBJECT_DATUM (object)) >> 16));
+	  = ((linkage_section_type_t) (OBJECT_DATUM (object) >> 16));
 	switch (section_type)
 	  {
 	  case LINKAGE_SECTION_TYPE_GLOBAL_OPERATOR:
 	  case LINKAGE_SECTION_TYPE_OPERATOR:
 	    {
-	      unsigned long n_words = ((OBJECT_DATUM (object)) & 0xFFFFUL);
-	      return (addr + (1 + n_words));
+	      unsigned long n_words = (OBJECT_DATUM (object) & 0xFFFFUL);
+	      return addr + (1 + n_words);
 	    }
 	  case LINKAGE_SECTION_TYPE_REFERENCE:
 	  case LINKAGE_SECTION_TYPE_ASSIGNMENT:
-	    return (addr + 1);
+	    return addr + 1;
 	  default:
 	    outf_error ("Invalid linkage section type: %d\n", section_type);
-	    return (addr + 1);
+	    return addr + 1;
 	  }
       }
     case TC_MANIFEST_CLOSURE:
-      return (compiled_closure_objects (addr + 1));
+      return compiled_closure_objects (addr + 1);
 #endif /* CC_SUPPORT_P */
     case TC_MANIFEST_NM_VECTOR:
-      {
-	unsigned long n_words = (OBJECT_DATUM (object));
-	return (addr + (1 + n_words));
-      }
+      return addr + (1 + OBJECT_DATUM (object));
     default:
-      return (addr + 1);
+      return addr + 1;
     }
 }
 
@@ -1394,26 +1298,26 @@ verify_heap_area (const char * name, SCHEME_OBJECT * area, SCHEME_OBJECT * end)
 }
 
 bool
-verify_stack (SCHEME_OBJECT * sp, SCHEME_OBJECT * bottom)
+verify_stack (SCHEME_OBJECT* sp, SCHEME_OBJECT* bottom)
 {
-  int complaints = 0;
-  while (STACK_LOCATIVE_ABOVE_P (sp, bottom))
+  unsigned int complaints = 0;
+  while (sp < bottom)
     {
-      SCHEME_OBJECT object = STACK_LOCATIVE_POP (sp);
+      SCHEME_OBJECT object = *sp++;
       unsigned int type = OBJECT_TYPE (object);
       if (type == TC_MANIFEST_NM_VECTOR)
 	{
-	  unsigned long n_words = (OBJECT_DATUM (object));
+	  unsigned long n_words = OBJECT_DATUM (object);
 	  if (n_words > 1000)
 	    outf_error ("%#lx: Extraordinary finger size: %ld\n",
-			((unsigned long)sp), n_words);
-	  sp = STACK_LOCATIVE_OFFSET (sp, n_words);
+			((unsigned long) sp), n_words);
+	  sp += n_words;
 	}
       else if (type == TC_MANIFEST_CLOSURE
 	       || type == TC_BROKEN_HEART
 	       || gc_type_code (type) == GC_UNDEFINED)
 	{
-	  outf_error ("%#lx: Invalid stack slot: ", ((unsigned long)sp));
+	  outf_error ("%#lx: Invalid stack slot: ", ((unsigned long) sp));
 	  print_object (ERROR_OUTPUT, object);
 	  outf_error ("\n");
 	  complaints += 1;
@@ -1423,19 +1327,19 @@ verify_stack (SCHEME_OBJECT * sp, SCHEME_OBJECT * bottom)
 }
 
 bool
-verify_heap (void)
+verify_heap (ictx_t* ic)
 {
   bool c = verify_heap_area ("constants", constant_start, constant_alloc_next);
   bool h = verify_heap_area ("heap", heap_start, Free);
-  bool s = verify_stack (stack_pointer, STACK_BOTTOM);
+  bool s = verify_stack (get_sp (ic), get_stack_end (ic));
   outf_flush_error ();
-  return (c && h && s);
+  return c && h && s;
 }
 
 #else  /* !ENABLE_DEBUGGING_TOOLS */
 
 bool
-verify_heap (void)
+verify_heap (ictx_t* ic)
 {
   return true;
 }
@@ -1448,7 +1352,7 @@ Complains if a scan of the heap encounters anything unexpected.\n\
 Returns #T if the scan was successful and #F if there were any complaints.")
 {
   PRIMITIVE_HEADER (0);
-  PRIMITIVE_RETURN (verify_heap () ? SHARP_T : SHARP_F);
+  PRIMITIVE_RETURN (verify_heap (ictx) ? SHARP_T : SHARP_F);
 }
 
 /* Code for interactively setting and clearing the interpreter
