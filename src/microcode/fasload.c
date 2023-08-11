@@ -216,22 +216,21 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
   fixed_objects = SHARP_F;
 
   /* Setup initial program */
-  ictx_t* ic = get_ictx ();
-  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ic);
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ptctx_stack (ptctx));
 
   SCHEME_OBJECT exp = PAIR_CAR (result);
   SCHEME_OBJECT env = THE_GLOBAL_ENV;
 
   /* Clear various interpreter state parameters.  */
   trapping = false;
-  set_history (make_dummy_history (), ic);
-  set_restore_history_offset (0, ic);
+  set_history (make_dummy_history (), ptctx);
+  set_restore_history_offset (0, ptctx);
   CC_TRANSPORT_END ();
   execute_reload_cleanups ();
   EXIT_CRITICAL_SECTION ({});
 
   /* Return in a non-standard way. */
-  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION, ic);
+  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION, ptctx);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }

@@ -26,7 +26,10 @@ USA.
 */
 
 /* Named constants used throughout the interpreter */
-
+
+#ifndef SCM_CONST_H
+#define SCM_CONST_H 1
+
 #define PI 3.1415926535
 
 /* Assorted sizes used in various places */
@@ -56,7 +59,7 @@ USA.
 #define MAX_LIST_PRINT 10
 
 #define ILLEGAL_PRIMITIVE -1
-
+
 /* Primitive flow control codes: directs computation after processing
    a primitive application.  */
 
@@ -96,17 +99,4 @@ USA.
 #define LEXPR_PRIMITIVE_ARITY		-1
 #define UNKNOWN_PRIMITIVE_ARITY		-2
 
-/* Error case detection for precomputed constants */
-/* VMS preprocessor does not like line continuations in conditionals */
-
-#define Are_The_Constants_Incompatible					\
-((TC_FALSE != 0x00) || (TC_CONSTANT != 0x08) ||				\
- (TC_FIXNUM != 0x1A) || (TC_BROKEN_HEART != 0x22) || 			\
- (TC_CHARACTER_STRING != 0x1E))
-
-/* The values used above are in sdata.h and types.h,
-   check for consistency if the check below fails. */
-
-#if Are_The_Constants_Incompatible
-#include "Error: const.h and types.h disagree"
-#endif
+#endif  // SCM_CONST_H

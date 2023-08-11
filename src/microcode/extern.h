@@ -50,8 +50,8 @@ USA.
    extern bool Bignum_Debug;
    extern bool Print_Errors;
 
-   extern bool verify_heap (ictx_t*);
-   extern void Pop_Return_Break_Point (ictx_t*);
+   extern bool verify_heap (sstack_t*);
+   extern void Pop_Return_Break_Point (sstack_t*);
    extern unsigned int debug_slotno;
    extern unsigned int debug_nslots;
    extern unsigned int local_slotno;
@@ -318,9 +318,9 @@ extern void preserve_interrupt_mask (void);
 extern void canonicalize_primitive_context (void);
 extern void back_out_of_primitive (void);
 
-extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
 extern void Do_Micro_Error (long, bool);
-extern void Stack_Death (ictx_t*) NORETURN;
+extern void Stack_Death (ptctx_t*) NORETURN;
 extern SCHEME_OBJECT * control_point_start (SCHEME_OBJECT);
 extern SCHEME_OBJECT * control_point_end (SCHEME_OBJECT);
 extern void unpack_control_point (SCHEME_OBJECT);
@@ -332,7 +332,7 @@ extern void Debug_Stack_Trace (SCHEME_OBJECT*);
 extern void Show_Env (SCHEME_OBJECT);
 extern void Print_Return (SCHEME_OBJECT, const char *);
 extern void Print_Expression (SCHEME_OBJECT, const char *);
-extern void Print_Primitive (SCHEME_OBJECT, ictx_t*);
+extern void Print_Primitive (SCHEME_OBJECT, sstack_t*);
 
 
 #endif /* not SCM_EXTERN_H */

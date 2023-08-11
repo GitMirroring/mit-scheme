@@ -43,18 +43,18 @@ typedef enum
 } int_action_t;
 
 static inline void
-stack_check (unsigned long n, ictx_t* ic)
+stack_check (unsigned long n, sstack_t* s)
 {
-  if (stack_can_push_p (n, ic))
+  if (stack_can_push_p (n, s))
     {
-      if (stack_overwritten_p (ic))
+      if (stack_overwritten_p (s))
         stack_death ("stack_check");
       REQUEST_INTERRUPT (INT_Stack_Overflow);
     }
 }
 
 static inline int_action_t
-single_val (SCHEME_OBJECT val, ictx_t* ic)
+single_val (SCHEME_OBJECT val, ptctx_t* ic)
 {
   reset_vals (ic);
   add_val (val, ic);
@@ -62,7 +62,7 @@ single_val (SCHEME_OBJECT val, ictx_t* ic)
 }
 
 static inline void
-set_restore_history_offset_and_mark (SCHEME_OBJECT offset, ictx_t* ic)
+set_restore_history_offset_and_mark (SCHEME_OBJECT offset, ptctx_t* ic)
 {
   set_restore_history_offset (offset, ic);
   SCHEME_OBJECT* p = restore_history_pointer (ic);
@@ -70,30 +70,30 @@ set_restore_history_offset_and_mark (SCHEME_OBJECT offset, ictx_t* ic)
     *p = MAKE_RETURN_CODE (RC_RESTORE_HISTORY);
 }
 
-extern void abort_to_interpreter (int, ictx_t*) NORETURN;
-extern int abort_to_interpreter_argument (ictx_t*);
+extern void abort_to_interpreter (int, ptctx_t*) NORETURN;
+extern int abort_to_interpreter_argument (ptctx_t*);
 
 /* Note: push_cont must match the definitions in sdata.h */
 
 static inline void
-push_cont (SCHEME_OBJECT ret, SCHEME_OBJECT obj, ictx_t* ic)
+push_cont (SCHEME_OBJECT ret, SCHEME_OBJECT obj, sstack_t* s)
 {
-  stack_push (obj, ic);
-  stack_push (ret, ic);
+  stack_push (obj, s);
+  stack_push (ret, s);
 }
 
 static inline void
-push_cont_rc (unsigned long rc, SCHEME_OBJECT obj, ictx_t* ic)
+push_cont_rc (unsigned long rc, SCHEME_OBJECT obj, sstack_t* s)
 {
-  push_cont ((MAKE_RETURN_CODE (rc)), obj, ic);
+  push_cont ((MAKE_RETURN_CODE (rc)), obj, s);
 }
 
 static inline void
 push_cont_env (unsigned long rc, SCHEME_OBJECT obj, SCHEME_OBJECT env,
-               ictx_t* ic)
+               sstack_t* s)
 {
-  stack_push (env, ic);
-  push_cont ((MAKE_RETURN_CODE (rc)), obj, ic);
+  stack_push (env, s);
+  push_cont ((MAKE_RETURN_CODE (rc)), obj, s);
 }
 
 static inline SCHEME_OBJECT
@@ -115,48 +115,42 @@ apply_frame_header_n_args (SCHEME_OBJECT header)
 }
 
 static inline SCHEME_OBJECT
-apply_frame_header (ictx_t* ic)
+apply_frame_header (sstack_t* s)
 {
-  return stack_ref (0, ic);
+  return stack_ref (0, s);
 }
 
 static inline SCHEME_OBJECT
-apply_frame_proc (ictx_t* ic)
+apply_frame_proc (sstack_t* s)
 {
-  return stack_ref (1, ic);
+  return stack_ref (1, s);
 }
 
 static inline void
-set_apply_frame_proc (SCHEME_OBJECT proc, ictx_t* ic)
+set_apply_frame_proc (SCHEME_OBJECT proc, sstack_t* s)
 {
-  return stack_set (1, proc, ic);
+  return stack_set (1, proc, s);
 }
 
 static inline SCHEME_OBJECT
-apply_frame_first_arg (ictx_t* ic)
+apply_frame_first_arg (sstack_t* s)
 {
-  return stack_ref (2, ic);
-}
-
-static inline void
-discard_apply_frame_header_and_proc (ictx_t* ic)
-{
-  ic->stack_pointer += 2;
+  return stack_ref (2, s);
 }
 
 static inline unsigned long
-apply_frame_size (ictx_t* ic)
+apply_frame_size (sstack_t* s)
 {
-  return apply_frame_header_size (apply_frame_header (ic));
+  return apply_frame_header_size (apply_frame_header (s));
 }
 
 static inline unsigned long
-apply_frame_n_args (ictx_t* ic)
+apply_frame_n_args (sstack_t* s)
 {
-  return apply_frame_header_n_args (apply_frame_header (ic));
+  return apply_frame_header_n_args (apply_frame_header (s));
 }
 
-extern int_action_t primitive_apply_internal (SCHEME_OBJECT, ictx_t*);
-#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, ic))
+extern int_action_t primitive_apply_internal (SCHEME_OBJECT, ptctx_t*);
+#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, s))
 
 #endif /* not SCM_INTERP_H */

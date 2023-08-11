@@ -35,11 +35,11 @@ USA.
 extern void init_exit_scheme (void);
 extern void OS_announcement (void);
 extern void initialize_fixed_objects_vector (void);
-extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
 extern SCHEME_OBJECT make_microcode_identification_vector (void);
 
-static void start_scheme (ictx_t*);
-static void Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
+static void start_scheme (ptctx_t*);
+static void Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
 
 const char * scheme_program_name;
 const char * OS_Name;
@@ -102,7 +102,7 @@ main_name (int argc, const char ** argv)
   setup_memory ((BLOCKS_TO_WORDS (option_heap_size)),
 		stack_size,
 		(BLOCKS_TO_WORDS (option_constant_size)));
-  ictx_t* ic = initialize_ictx (stack_size, memory_block_start);
+  ptctx_t* ic = initialize_ptctx (stack_size, memory_block_start);
 
   initialize_primitives ();
   compiler_initialize (option_fasl_file != 0);
@@ -119,7 +119,7 @@ main_name (int argc, const char ** argv)
 #endif
 
 static void
-start_scheme (ictx_t* ic)
+start_scheme (ptctx_t* ic)
 {
   SCHEME_OBJECT expr;
 
@@ -166,12 +166,13 @@ start_scheme (ictx_t* ic)
 
   INITIALIZE_INTERRUPTS (0);
 
-  stack_check (CONTINUATION_SIZE, ic);
-  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ic);
+  sstack_t* s = ptctx_stack (ic);
+  stack_check (CONTINUATION_SIZE, s);
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, s);
   trapping = false;
 
   /* Go to it! */
-  if (! (stack_can_push_p (0, ic) && Free <= heap_alloc_limit))
+  if (! (stack_can_push_p (0, s) && Free <= heap_alloc_limit))
     {
       outf_fatal ("Configuration won't hold initial data.\n");
       termination_init_error ();
@@ -181,7 +182,7 @@ start_scheme (ictx_t* ic)
 }
 
 static void
-Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
+Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 {
   Interpret (exp, env, ic);
   outf_fatal ("\nThe interpreter returned to top level!\n");
@@ -190,7 +191,7 @@ Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 
 /* This must be used with care, and only synchronously. */
 SCHEME_OBJECT
-Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
+Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 {
   Interpret (exp, env, ic);
   return get_single_val (ic);

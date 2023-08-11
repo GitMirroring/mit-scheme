@@ -32,6 +32,7 @@ USA.
 
 #include "context.h"
 #include "registers.h"
+#include "stack.h"
 
 /* Interrupt bits -- scanned from LSB (1) to MSB (16) */
 
@@ -73,54 +74,38 @@ USA.
 #define INTERRUPT_ENABLED_P(mask) ((GET_INT_MASK & (mask)) != 0)
 #define INTERRUPT_PENDING_P(mask) (((PENDING_INTERRUPTS ()) & (mask)) != 0)
 
-extern void compiler_setup_interrupt(ictx_t*);
-
 #define SET_INTERRUPT_MASK(mask) do                                     \
 {                                                                       \
-  GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_MASK (mask);                                                  \
-  compiler_setup_interrupt (get_ictx ());                               \
-  RELEASE_INTERRUPT_REGISTERS ();                                       \
+  compiler_setup_interrupt (current_stack ());                          \
 } while (0)
 
 #define REQUEST_INTERRUPT(code) do                                      \
 {                                                                       \
-  GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_CODE (GET_INT_CODE | (code));                                 \
-  compiler_setup_interrupt (get_ictx ());                               \
-  RELEASE_INTERRUPT_REGISTERS ();                                       \
+  compiler_setup_interrupt (current_stack ());                          \
 } while (0)
 
 #define CLEAR_INTERRUPT_NOLOCK(code) do                                 \
 {                                                                       \
   SET_INT_CODE (GET_INT_CODE &~ (code));                                \
-  compiler_setup_interrupt (get_ictx ());                               \
+  compiler_setup_interrupt (current_stack ());                          \
 } while (0)
 
 #define CLEAR_INTERRUPT(code) do                                        \
 {                                                                       \
-  GRAB_INTERRUPT_REGISTERS ();                                          \
   clear_interrupt_nolock (code);                                        \
-  RELEASE_INTERRUPT_REGISTERS ();                                       \
 } while (0)
 
 #define INITIALIZE_INTERRUPTS(mask) do                                  \
 {                                                                       \
-  GRAB_INTERRUPT_REGISTERS ();                                          \
   SET_INT_MASK (mask);                                                  \
   SET_INT_CODE (0);                                                     \
-  compiler_setup_interrupt (get_ictx ());                               \
-  RELEASE_INTERRUPT_REGISTERS ();                                       \
+  compiler_setup_interrupt (current_stack ());                          \
 } while (0)
 
-#if defined(__WIN32__)
-   extern void OS_grab_interrupt_registers (void);
-   extern void OS_release_interrupt_registers (void);
-#  define GRAB_INTERRUPT_REGISTERS() OS_grab_interrupt_registers ()
-#  define RELEASE_INTERRUPT_REGISTERS() OS_release_interrupt_registers ()
-#else
-#  define GRAB_INTERRUPT_REGISTERS()
-#  define RELEASE_INTERRUPT_REGISTERS()
-#endif
+#define RELEASE_INTERRUPT_REGISTERS()
+
+extern void compiler_setup_interrupt(sstack_t*);
 
 #endif  // SCM_INTRPT_H

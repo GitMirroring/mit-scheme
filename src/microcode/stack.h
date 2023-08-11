@@ -27,10 +27,122 @@ USA.
 
 /* Stack abstraction */
 
+#ifndef SCM_STACK_H
+#define SCM_STACK_H 1
+
+#include "object.h"
+
+typedef struct
+{
+  SCHEME_OBJECT* start;
+  SCHEME_OBJECT* guard;
+  SCHEME_OBJECT* pointer;
+  SCHEME_OBJECT* end;
+} sstack_t;
+
+static inline SCHEME_OBJECT*
+stack_start (sstack_t* s)
+{
+  return s->start;
+}
+
+static inline SCHEME_OBJECT*
+stack_end (sstack_t* s)
+{
+  return s->end;
+}
+
+static inline SCHEME_OBJECT*
+stack_guard (bool stack_overflow_enabled, sstack_t* s)
+{
+  return stack_overflow_enabled ? s->guard : s->start;
+}
+
+static inline SCHEME_OBJECT*
+stack_pointer (sstack_t* s)
+{
+  return s->pointer;
+}
+
+static inline void
+set_stack_pointer (SCHEME_OBJECT* sp, sstack_t* s)
+{
+  s->pointer = sp;
+}
+
+static inline void
+stack_push (SCHEME_OBJECT obj, sstack_t* s)
+{
+  *--s->pointer = obj;
+}
+
+static inline SCHEME_OBJECT
+stack_pop (sstack_t* s)
+{
+  return *s->pointer++;
+}
+
+static inline SCHEME_OBJECT
+stack_ref (unsigned int n, sstack_t* s)
+{
+  return s->pointer[n];
+}
+
+static inline SCHEME_OBJECT*
+stack_loc (unsigned int n, sstack_t* s)
+{
+  return s->pointer + n;
+}
+
+static inline void
+stack_set (unsigned int n, SCHEME_OBJECT obj, sstack_t* s)
+{
+  s->pointer[n] = obj;
+}
+
+static inline unsigned long
+stack_n_pushed (sstack_t* s)
+{
+  return s->end - s->pointer;
+}
+
+static inline void
+decrement_sp (unsigned long n, sstack_t* s)
+{
+  s->pointer -= n;
+}
+
+static inline void
+increment_sp (unsigned long n, sstack_t* s)
+{
+  s->pointer += n;
+}
+
+static inline bool
+stack_can_push_p (unsigned long n, sstack_t* s)
+{
+  return (s->pointer - n) >= s->guard;
+}
+
+static inline bool
+stack_overwritten_p (sstack_t* s)
+{
+  return *s->start != (MAKE_BROKEN_HEART (s->start));
+}
+
+#if 0
 #define STACK_CHECK_FATAL(s) do						\
 {									\
   if (STACK_OVERFLOWED_P ())						\
     stack_death (s);							\
 } while (false)
+#endif
 
-#define INITIALIZE_STACK() (reset_stack (get_ictx ()))
+// #define INITIALIZE_STACK() (reset_stack (get_ptctx ()))
+
+extern void initialize_default_stack (unsigned long, SCHEME_OBJECT*);
+extern sstack_t* default_stack (void);
+extern sstack_t* current_stack (void);
+extern void stack_reset (sstack_t*);
+
+#endif  // SCM_STACK_H

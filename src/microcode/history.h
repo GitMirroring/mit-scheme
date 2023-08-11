@@ -100,7 +100,7 @@ unmark_history_rib (SCHEME_OBJECT rib)
 {
   memory_set_2 (rib, unmarked_history (memory_ref_2 (rib)));
 }
-#define READ_DUMMY_HISTORY() VECTOR_REF (fixed_objects, DUMMY_HISTORY)
+#define READ_DUMMY_HISTORY() (VECTOR_REF (fixed_objects, DUMMY_HISTORY))
 #define SAVE_HISTORY_LENGTH (CONTINUATION_SIZE + 2)
 
 #ifndef DISABLE_HISTORY
@@ -121,14 +121,14 @@ unmark_history_rib (SCHEME_OBJECT rib)
 #  define COMPILER_END_SUBPROBLEM() do {} while (false)
 #endif
 
-extern void reset_history (ictx_t*);
+extern void reset_history (ptctx_t*);
 extern SCHEME_OBJECT make_dummy_history (void);
-extern void save_history (unsigned long, ictx_t*);
-extern bool restore_history (SCHEME_OBJECT, ictx_t*);
-extern void stop_history (ictx_t*);
-extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
-extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
-extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, ictx_t*);
-extern void end_subproblem (ictx_t*);
-extern void compiler_new_subproblem (ictx_t*);
-extern void compiler_new_reduction (ictx_t*);
+extern void save_history (unsigned long, ptctx_t*);
+extern bool restore_history (SCHEME_OBJECT, ptctx_t*);
+extern void stop_history (ptctx_t*);
+extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+extern void end_subproblem (ptctx_t*);
+extern void compiler_new_subproblem (ptctx_t*);
+extern void compiler_new_reduction (ptctx_t*);

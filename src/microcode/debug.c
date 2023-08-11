@@ -833,7 +833,7 @@ print_primitive_name (outf_channel stream, SCHEME_OBJECT primitive)
 }
 
 void
-Print_Primitive (SCHEME_OBJECT primitive, ictx_t* ic)
+Print_Primitive (SCHEME_OBJECT primitive, sstack_t* s)
 {
   outf_error ("Primitive: ");
   unsigned int nargs
@@ -847,7 +847,7 @@ Print_Primitive (SCHEME_OBJECT primitive, ictx_t* ic)
   for (unsigned int i = 0; i < nargs; i++)
     {
       sprintf (buffer, "...Arg %ld", ((long) (i + 1)));
-      print_expression (ERROR_OUTPUT, stack_ref (i, ic), buffer);
+      print_expression (ERROR_OUTPUT, stack_ref (i, s), buffer);
       outf_error ("\n");
     }
 }
@@ -1327,19 +1327,19 @@ verify_stack (SCHEME_OBJECT* sp, SCHEME_OBJECT* bottom)
 }
 
 bool
-verify_heap (ictx_t* ic)
+verify_heap (sstack_t* s)
 {
-  bool c = verify_heap_area ("constants", constant_start, constant_alloc_next);
-  bool h = verify_heap_area ("heap", heap_start, Free);
-  bool s = verify_stack (get_sp (ic), get_stack_end (ic));
+  bool vc = verify_heap_area ("constants", constant_start, constant_alloc_next);
+  bool vh = verify_heap_area ("heap", heap_start, Free);
+  bool vs = verify_stack (stack_pointer (s), stack_end (s));
   outf_flush_error ();
-  return c && h && s;
+  return vc && vh && vs;
 }
 
 #else  /* !ENABLE_DEBUGGING_TOOLS */
 
 bool
-verify_heap (ictx_t* ic)
+verify_heap (sstack_t* s)
 {
   return true;
 }
@@ -1352,7 +1352,7 @@ Complains if a scan of the heap encounters anything unexpected.\n\
 Returns #T if the scan was successful and #F if there were any complaints.")
 {
   PRIMITIVE_HEADER (0);
-  PRIMITIVE_RETURN (verify_heap (ictx) ? SHARP_T : SHARP_F);
+  PRIMITIVE_RETURN (verify_heap (ptctx_stack (ptctx)) ? SHARP_T : SHARP_F);
 }
 
 /* Code for interactively setting and clearing the interpreter

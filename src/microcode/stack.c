@@ -25,34 +25,42 @@ USA.
 
 */
 
-/* This file contains breakpoint utility definitions.  */
+/* Stack abstraction */
 
-#ifdef ENABLE_DEBUGGING_TOOLS
+#include "const.h"
+#include "context.h"
+#include "object.h"
+#include "stack.h"
 
-struct sp_record
+static sstack_t default_stack_v;
+
+void
+initialize_default_stack (unsigned long size, SCHEME_OBJECT* block)
 {
-  SCHEME_OBJECT * sp;
-  struct sp_record * next;
-};
+  default_stack_v.start = block;
+  default_stack_v.guard = (block + STACK_GUARD_SIZE);
+  default_stack_v.end = (block + size);
+  default_stack_v.pointer = default_stack_v.end;
+  (*block) = (MAKE_BROKEN_HEART (block));
+}
 
-typedef struct sp_record * sp_record_list;
-extern sp_record_list SP_List;
+sstack_t*
+default_stack ()
+{
+  return &default_stack_v;
+}
 
-#define DEBUG_MAXSLOTS 100
+sstack_t*
+current_stack ()
+{
+  return ptctx_stack (current_ptctx ());
+}
 
-#define EVAL_UCODE_HOOK() do						\
-{									\
-  (local_circle [local_slotno++]) = GET_EXP;				\
-  if (local_slotno >= DEBUG_MAXSLOTS)					\
-    local_slotno = 0;							\
-  if (local_nslots < DEBUG_MAXSLOTS)					\
-    local_nslots += 1;							\
-} while (0)
-
-#define POP_RETURN_UCODE_HOOK(s) do                                     \
-{                                                                       \
-  if (SP_List != 0)                                                     \
-    Pop_Return_Break_Point (s);                                         \
-} while (0)
-
-#endif /* ENABLE_DEBUGGING_TOOLS */
+void
+reset_stack (sstack_t* s)
+{
+  s->pointer = s->end;
+  *s->start = (MAKE_BROKEN_HEART (s->start));
+  s->guard = s->start + STACK_GUARD_SIZE;
+  compiler_setup_interrupt (s);
+}

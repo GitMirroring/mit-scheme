@@ -351,7 +351,7 @@ compiler_initialize (bool fasl_p)
 }
 
 void
-compiler_setup_interrupt (ictx_t* ic)
+compiler_setup_interrupt (sstack_t* s)
 {
   SET_MEMTOP
     (((PENDING_INTERRUPTS ()) != 0)
@@ -359,8 +359,8 @@ compiler_setup_interrupt (ictx_t* ic)
      : (GC_ENABLED_P ())
      ? heap_alloc_limit
      : heap_end);
-  SET_STACK_GUARD (get_stack_guard (INTERRUPT_ENABLED_P (INT_Stack_Overflow)),
-                   ic);
+  SET_STACK_GUARD
+    (get_stack_guard (INTERRUPT_ENABLED_P (INT_Stack_Overflow), s));
 }
 
 #define COMPILER_UTILITIES_HEADERS(h1, h2, n)				\

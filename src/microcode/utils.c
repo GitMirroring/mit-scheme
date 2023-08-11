@@ -185,7 +185,7 @@ error_death (long code, const char * message)
 }
 
 void
-Stack_Death (ictx_t* ic)
+Stack_Death (ptctx_t* ic)
 {
   outf_fatal("\nWill_Push vs. Pushed inconsistency.\n");
   Microcode_Termination (TERM_BAD_STACK);
@@ -209,7 +209,7 @@ preserve_interrupt_mask (void)
    and reenter.  */
 
 void
-canonicalize_primitive_context (ictx_t* ic)
+canonicalize_primitive_context (ptctx_t* ic)
 {
   SCHEME_OBJECT primitive = get_primitive (ic);
 
@@ -237,7 +237,7 @@ canonicalize_primitive_context (ictx_t* ic)
    restarted if the error/interrupt is proceeded.  */
 
 void
-back_out_of_primitive (ictx_t* ic)
+back_out_of_primitive (ptctx_t* ic)
 {
   SCHEME_OBJECT primitive = get_primitive (ic);
   assert (PRIMITIVE_P (primitive));
@@ -759,7 +759,7 @@ Do_Micro_Error (long error_code, bool from_pop_return_p)
 /* History */
 
 void
-reset_history (ictx_t* ic)
+reset_history (ptctx_t* ic)
 {
   set_history
     (((VECTOR_P (fixed_objects) && (READ_DUMMY_HISTORY () != SHARP_F))
@@ -793,7 +793,7 @@ make_dummy_history (void)
    and the offset is 0. */
 
 void
-save_history (unsigned long rc, ictx_t* ic)
+save_history (unsigned long rc, ptctx_t* ic)
 {
   stack_check (HISTORY_SIZE, ic);
   stack_push (SHARP_F, ic); /* Prev_Restore_History_Stacklet */
@@ -807,7 +807,7 @@ save_history (unsigned long rc, ictx_t* ic)
    only from the RC_RESTORE_HISTORY case in "interp.c".  */
 
 bool
-restore_history (SCHEME_OBJECT history, ictx_t* ic)
+restore_history (SCHEME_OBJECT history, ptctx_t* ic)
 {
   SCHEME_OBJECT new_hist = copy_history (history);
   if (new_history == SHARP_F)
@@ -824,14 +824,14 @@ restore_history (SCHEME_OBJECT history, ictx_t* ic)
    are not side-effected in the history collection process.  */
 
 void
-stop_history (ictx_t* ic)
+stop_history (ptctx_t* ic)
 {
   save_history (RC_RESTORE_DONT_COPY_HISTORY, ic);
   set_restore_history_offset (stack_n_pushed (ic));
 }
 
 void
-new_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
+new_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 {
   SCHEME_OBJECT history = history_next (get_history (ic));
   SCHEME_OBJECT rib = history_rib (history);
@@ -843,7 +843,7 @@ new_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 }
 
 void
-reuse_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
+reuse_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 {
   SCHEME_OBJECT rib = history_rib (get_history (ic));
   set_history_rib_exp (rib, exp);
@@ -852,7 +852,7 @@ reuse_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 }
 
 void
-new_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
+new_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 {
   SCHEME_OBJECT history = get_history (ic);
   SCHEME_OBJECT next = history_rib_next (history_rib (history));
@@ -863,7 +863,7 @@ new_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, ictx_t* ic)
 }
 
 void
-end_subproblem (ictx_t* ic)
+end_subproblem (ptctx_t* ic)
 {
   SCHEME_OBJECT history = get_history (ic);
   unmark_history (history);
@@ -871,13 +871,13 @@ end_subproblem (ictx_t* ic)
 }
 
 void
-compiler_new_subproblem (ictx_t* ic)
+compiler_new_subproblem (ptctx_t* ic)
 {
   new_subproblem (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)), ic);
 }
 
 void
-compiler_new_reduction (ictx_t* ic)
+compiler_new_reduction (ptctx_t* ic)
 {
   new_reduction (SHARP_F, (MAKE_RETURN_CODE (RC_POP_FROM_COMPILED_CODE)), ic);
 }
@@ -970,7 +970,7 @@ copy_history (SCHEME_OBJECT hist_obj)
    call to the primitive function. */
 
 int_action_t
-primitive_apply_internal (SCHEME_OBJECT primitive, ictx_t* ic)
+primitive_apply_internal (SCHEME_OBJECT primitive, ptctx_t* ic)
 {
 #ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
