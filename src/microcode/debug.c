@@ -1352,7 +1352,7 @@ Complains if a scan of the heap encounters anything unexpected.\n\
 Returns #T if the scan was successful and #F if there were any complaints.")
 {
   PRIMITIVE_HEADER (0);
-  PRIMITIVE_RETURN (verify_heap (ptctx_stack (ptctx)) ? SHARP_T : SHARP_F);
+  PRIMITIVE_RETURN (verify_heap (tctx_stack (tctx)) ? SHARP_T : SHARP_F);
 }
 
 /* Code for interactively setting and clearing the interpreter

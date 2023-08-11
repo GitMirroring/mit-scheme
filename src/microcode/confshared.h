@@ -475,9 +475,6 @@ extern void * alpha_heap_malloc (unsigned long);
 
 #ifdef __WIN32__
 
-extern void win32_stack_reset (void);
-#define STACK_RESET win32_stack_reset
-
 #define HEAP_MALLOC(size) (WIN32_ALLOCATE_HEAP ((size), (&scheme_heap_handle)))
 #define HEAP_FREE(base)							\
   WIN32_RELEASE_HEAP (((char *) (base)), scheme_heap_handle)

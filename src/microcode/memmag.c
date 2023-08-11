@@ -192,7 +192,6 @@ reset_allocator_parameters (unsigned long n_constant, unsigned long reserved)
 
   RESET_HEAP_ALLOC_LIMIT ();
   INITIALIZE_STACK ();
-  STACK_RESET ();
 }
 
 static void

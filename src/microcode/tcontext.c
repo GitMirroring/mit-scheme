@@ -29,54 +29,54 @@ USA.
 #include "history.h"
 
 static void
-init_ptctx (ptctx_t* ptctx, sstack_t* stack)
+init_tctx (tctx_t* tctx, sstack_t* stack)
 {
-  ptctx->stack = stack;
-  ptctx->value_pointer = ptctx->value_store;
+  tctx->stack = stack;
+  tctx->value_pointer = tctx->value_store;
   set_history
     ((VECTOR_P (fixed_objects) && READ_DUMMY_HISTORY () != SHARP_F)
      ? READ_DUMMY_HISTORY ()
      : make_dummy_history (),
-     ptctx);
-  ptctx->restore_history_offset = 0;
-  ptctx->state = 0;
-  ptctx->prim_apply_error_code = PRIM_DONE;
-  ptctx->primitive = SHARP_F;
-  ptctx->primitive_free = 0;
+     tctx);
+  tctx->restore_history_offset = 0;
+  tctx->state = 0;
+  tctx->prim_apply_error_code = PRIM_DONE;
+  tctx->primitive = SHARP_F;
+  tctx->primitive_free = 0;
 }
 
 #if 0
-static ptctx_t*
-new_ptctx (sstack_t* stack)
+static tctx_t*
+new_tctx (sstack_t* stack)
 {
-  ptctx_t* ptctx = (malloc (sizeof (ptctx_t)));
-  assert (ptctx != 0);
-  init_ptctx (ptctx, stack);
-  return ptctx;
+  tctx_t* tctx = (malloc (sizeof (tctx_t)));
+  assert (tctx != 0);
+  init_tctx (tctx, stack);
+  return tctx;
 }
 #endif
 
-static ptctx_t default_ptctx_v;
+static tctx_t default_tctx_v;
 // This will need to be thread local:
-static ptctx_t* current_ptctx_v;
+static tctx_t* current_tctx_v;
 
-ptctx_t*
-initialize_ptctx (unsigned long size, SCHEME_OBJECT* block)
+tctx_t*
+initialize_tctx (unsigned long size, SCHEME_OBJECT* block)
 {
   initialize_default_stack (size, block);
-  init_ptctx (&default_ptctx_v, default_stack ());
-  current_ptctx_v = &default_ptctx_v;
-  return current_ptctx_v;
+  init_tctx (&default_tctx_v, default_stack ());
+  current_tctx_v = &default_tctx_v;
+  return current_tctx_v;
 }
 
-ptctx_t*
-default_ptctx (void)
+tctx_t*
+default_tctx (void)
 {
-  return &default_ptctx_v;
+  return &default_tctx_v;
 }
 
-ptctx_t*
-current_ptctx (void)
+tctx_t*
+current_tctx (void)
 {
-  return current_ptctx_v;
+  return current_tctx_v;
 }

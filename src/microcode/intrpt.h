@@ -30,7 +30,7 @@ USA.
 #ifndef SCM_INTRPT_H
 #define SCM_INTRPT_H 1
 
-#include "context.h"
+#include "tcontext.h"
 #include "registers.h"
 #include "stack.h"
 
@@ -86,15 +86,10 @@ USA.
   compiler_setup_interrupt (current_stack ());                          \
 } while (0)
 
-#define CLEAR_INTERRUPT_NOLOCK(code) do                                 \
+#define CLEAR_INTERRUPT(code) do                                        \
 {                                                                       \
   SET_INT_CODE (GET_INT_CODE &~ (code));                                \
   compiler_setup_interrupt (current_stack ());                          \
-} while (0)
-
-#define CLEAR_INTERRUPT(code) do                                        \
-{                                                                       \
-  clear_interrupt_nolock (code);                                        \
 } while (0)
 
 #define INITIALIZE_INTERRUPTS(mask) do                                  \

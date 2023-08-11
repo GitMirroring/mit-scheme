@@ -54,24 +54,24 @@ stack_check (unsigned long n, sstack_t* s)
 }
 
 static inline int_action_t
-single_val (SCHEME_OBJECT val, ptctx_t* ic)
+single_val (SCHEME_OBJECT val, tctx_t* tctx)
 {
-  reset_vals (ic);
-  add_val (val, ic);
+  reset_vals (tctx);
+  add_val (val, tctx);
   return INT_ACTION_APPLY_CONT;
 }
 
 static inline void
-set_restore_history_offset_and_mark (SCHEME_OBJECT offset, ptctx_t* ic)
+set_restore_history_offset_and_mark (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  set_restore_history_offset (offset, ic);
-  SCHEME_OBJECT* p = restore_history_pointer (ic);
+  set_restore_history_offset (offset, tctx);
+  SCHEME_OBJECT* p = restore_history_pointer (tctx);
   if (p != 0)
     *p = MAKE_RETURN_CODE (RC_RESTORE_HISTORY);
 }
 
-extern void abort_to_interpreter (int, ptctx_t*) NORETURN;
-extern int abort_to_interpreter_argument (ptctx_t*);
+extern void abort_to_interpreter (int, tctx_t*) NORETURN;
+extern int abort_to_interpreter_argument (tctx_t*);
 
 /* Note: push_cont must match the definitions in sdata.h */
 
@@ -150,7 +150,6 @@ apply_frame_n_args (sstack_t* s)
   return apply_frame_header_n_args (apply_frame_header (s));
 }
 
-extern int_action_t primitive_apply_internal (SCHEME_OBJECT, ptctx_t*);
-#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, s))
+extern void primitive_apply_internal (SCHEME_OBJECT, tctx_t*);
 
 #endif /* not SCM_INTERP_H */

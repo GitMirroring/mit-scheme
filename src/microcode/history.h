@@ -121,14 +121,14 @@ unmark_history_rib (SCHEME_OBJECT rib)
 #  define COMPILER_END_SUBPROBLEM() do {} while (false)
 #endif
 
-extern void reset_history (ptctx_t*);
+extern void reset_history (tctx_t*);
 extern SCHEME_OBJECT make_dummy_history (void);
-extern void save_history (unsigned long, ptctx_t*);
-extern bool restore_history (SCHEME_OBJECT, ptctx_t*);
-extern void stop_history (ptctx_t*);
-extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
-extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
-extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
-extern void end_subproblem (ptctx_t*);
-extern void compiler_new_subproblem (ptctx_t*);
-extern void compiler_new_reduction (ptctx_t*);
+extern void save_history (unsigned long, tctx_t*);
+extern bool restore_history (SCHEME_OBJECT, tctx_t*);
+extern void stop_history (tctx_t*);
+extern void new_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern void reuse_subproblem (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern void end_subproblem (tctx_t*);
+extern void compiler_new_subproblem (tctx_t*);
+extern void compiler_new_reduction (tctx_t*);

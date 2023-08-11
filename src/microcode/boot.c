@@ -35,11 +35,11 @@ USA.
 extern void init_exit_scheme (void);
 extern void OS_announcement (void);
 extern void initialize_fixed_objects_vector (void);
-extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern SCHEME_OBJECT make_microcode_identification_vector (void);
 
-static void start_scheme (ptctx_t*);
-static void Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+static void start_scheme (tctx_t*);
+static void Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 
 const char * scheme_program_name;
 const char * OS_Name;
@@ -102,7 +102,7 @@ main_name (int argc, const char ** argv)
   setup_memory ((BLOCKS_TO_WORDS (option_heap_size)),
 		stack_size,
 		(BLOCKS_TO_WORDS (option_constant_size)));
-  ptctx_t* ic = initialize_ptctx (stack_size, memory_block_start);
+  tctx_t* ic = initialize_tctx (stack_size, memory_block_start);
 
   initialize_primitives ();
   compiler_initialize (option_fasl_file != 0);
@@ -119,7 +119,7 @@ main_name (int argc, const char ** argv)
 #endif
 
 static void
-start_scheme (ptctx_t* ic)
+start_scheme (tctx_t* ic)
 {
   SCHEME_OBJECT expr;
 
@@ -166,7 +166,7 @@ start_scheme (ptctx_t* ic)
 
   INITIALIZE_INTERRUPTS (0);
 
-  sstack_t* s = ptctx_stack (ic);
+  sstack_t* s = tctx_stack (ic);
   stack_check (CONTINUATION_SIZE, s);
   push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, s);
   trapping = false;
@@ -182,7 +182,7 @@ start_scheme (ptctx_t* ic)
 }
 
 static void
-Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
+Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* ic)
 {
   Interpret (exp, env, ic);
   outf_fatal ("\nThe interpreter returned to top level!\n");
@@ -191,7 +191,7 @@ Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
 
 /* This must be used with care, and only synchronously. */
 SCHEME_OBJECT
-Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, ptctx_t* ic)
+Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* ic)
 {
   Interpret (exp, env, ic);
   return get_single_val (ic);

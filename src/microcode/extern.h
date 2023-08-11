@@ -314,13 +314,13 @@ extern void termination_eof (void) NORETURN;
 extern void termination_signal (const char * signal_name) NORETURN;
 
 extern void setup_interrupt (unsigned long);
-extern void preserve_interrupt_mask (void);
-extern void canonicalize_primitive_context (void);
-extern void back_out_of_primitive (void);
+extern void preserve_interrupt_mask (sstack_t*);
+extern void canonicalize_primitive_context (tctx_t*);
+extern void back_out_of_primitive (tctx_t*);
 
-extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, ptctx_t*);
+extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern void Do_Micro_Error (long, bool);
-extern void Stack_Death (ptctx_t*) NORETURN;
+extern void Stack_Death (tctx_t*) NORETURN;
 extern SCHEME_OBJECT * control_point_start (SCHEME_OBJECT);
 extern SCHEME_OBJECT * control_point_end (SCHEME_OBJECT);
 extern void unpack_control_point (SCHEME_OBJECT);

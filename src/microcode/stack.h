@@ -125,11 +125,20 @@ stack_can_push_p (unsigned long n, sstack_t* s)
 }
 
 static inline bool
+stack_can_pop_p (unsigned long n, sstack_t* s)
+{
+  return (s->pointer + n) <= s->end;
+}
+
+static inline bool
 stack_overwritten_p (sstack_t* s)
 {
   return *s->start != (MAKE_BROKEN_HEART (s->start));
 }
 
+#define SP_TO_N_PUSHED(sp, start, end) ((end) - (sp))
+#define N_PUSHED_TO_SP(np, start, end) ((end) - (np))
+
 #if 0
 #define STACK_CHECK_FATAL(s) do						\
 {									\
@@ -138,7 +147,7 @@ stack_overwritten_p (sstack_t* s)
 } while (false)
 #endif
 
-// #define INITIALIZE_STACK() (reset_stack (get_ptctx ()))
+// #define INITIALIZE_STACK() (stack_reset (get_tctx ()))
 
 extern void initialize_default_stack (unsigned long, SCHEME_OBJECT*);
 extern sstack_t* default_stack (void);

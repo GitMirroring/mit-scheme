@@ -37,7 +37,7 @@ USA.
 /* Definition of primitives. */
 
 #define DEFINE_PRIMITIVE(scheme_name, fn_name, min_args, max_args, doc)	\
-SCHEME_OBJECT fn_name (ptctx_t* ptctx)
+SCHEME_OBJECT fn_name (tctx_t* tctx)
 
 /* Can be used for `max_args' in `DEFINE_PRIMITIVE' to indicate that
    the primitive has no upper limit on its arity.  */
@@ -47,21 +47,27 @@ SCHEME_OBJECT fn_name (ptctx_t* ptctx)
 #ifdef ENABLE_PRIMITIVE_PROFILING
    extern void record_primitive_entry (SCHEME_OBJECT);
 #  define PRIMITIVE_HEADER(n_args)                                      \
-     record_primitive_entry (get_primitive (current_ptctx ()))
+     record_primitive_entry (get_primitive (tctx))
 #else
-#  define PRIMITIVE_HEADER(n_args) do {} while (0)
+#  define PRIMITIVE_HEADER(n_args) do {} while (false)
 #endif
 
 /* Primitives return by performing one of the following operations. */
 #define PRIMITIVE_RETURN(value)	return (value)
-#define PRIMITIVE_ABORT abort_to_interpreter
+#define PRIMITIVE_ABORT(code) (abort_to_interpreter ((code), tctx))
+
+#define PRIMITIVE_REDUCE(exp, env) do                                   \
+{                                                                       \
+  add_val ((exp), tctx);                                                \
+  add_val ((env), tctx);                                                \
+  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION);                                 \
+} while (false)
 
 /* Various utilities */
 
 #define Primitive_GC(Amount) do                                         \
 {                                                                       \
-  SCHEME_OBJECT* Free_primitive                                         \
-    = get_primitive_free (current_ptctx ());                            \
+  SCHEME_OBJECT* Free_primitive = get_primitive_free (current_tctx ()); \
   if (Free_primitive < heap_start)                                      \
     {                                                                   \
       outf_fatal                                                        \
@@ -75,21 +81,22 @@ SCHEME_OBJECT fn_name (ptctx_t* ptctx)
     }                                                                   \
   REQUEST_GC ((Amount) + (Free - Free_primitive));                      \
   signal_interrupt_from_primitive ();                                   \
-} while (0)
+} while (false)
 
 #define Primitive_GC_If_Needed(Amount) do				\
 {									\
   if (GC_NEEDED_P (Amount)) Primitive_GC (Amount);			\
-} while (0)
+} while (false)
 
 #define CHECK_ARG(argument, type_p) do					\
 {									\
   if (! (type_p (ARG_REF (argument))))					\
     error_wrong_type_arg (argument);					\
-} while (0)
+} while (false)
 
 #define ARG_LOC(argument) (stack_loc (argument - 1, current_stack ()))
 #define ARG_REF(argument) (stack_ref (argument - 1, current_stack ()))
+#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, current_stack ()))
 
 extern void signal_error_from_primitive (long) NORETURN;
 extern void signal_interrupt_from_primitive (void) NORETURN;

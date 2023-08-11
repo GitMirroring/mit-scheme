@@ -264,7 +264,7 @@ termination_signal (const char * signal_name)
 }
 
 static void
-bind_interpreter_state (interpreter_state_t* s, ptctx_t* ic)
+bind_interpreter_state (interpreter_state_t* s, tctx_t* ic)
 {
   interpreter_state_t* state = interpreter_state (ic);
   s->previous_state = state;
@@ -274,7 +274,7 @@ bind_interpreter_state (interpreter_state_t* s, ptctx_t* ic)
 }
 
 static void
-unbind_interpreter_state (interpreter_state_t* s, ptctx_t* ic)
+unbind_interpreter_state (interpreter_state_t* s, tctx_t* ic)
 {
   {
     unsigned long old_mask = GET_INT_MASK;
@@ -286,7 +286,7 @@ unbind_interpreter_state (interpreter_state_t* s, ptctx_t* ic)
 }
 
 static void
-edwin_auto_save (ptctx_t* ic)
+edwin_auto_save (tctx_t* ic)
 {
   static SCHEME_OBJECT position;
   static interpreter_state_t new_state;
@@ -332,7 +332,7 @@ edwin_auto_save (ptctx_t* ic)
 }
 
 static void
-delete_temp_files (ptctx_t* ic)
+delete_temp_files (tctx_t* ic)
 {
   static SCHEME_OBJECT position;
   static interpreter_state_t new_state;

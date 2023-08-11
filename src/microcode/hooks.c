@@ -33,11 +33,11 @@ USA.
 #include "history.h"
 
 static SCHEME_OBJECT allocate_control_point (unsigned long, bool);
-static void with_new_interrupt_mask (unsigned long);
+static void with_new_interrupt_mask (unsigned long, tctx_t*);
 
 /* This is a kludge to compensate for the interpreter popping
    a primitive's frame off the stack after it returns.  */
-#define UN_POP_PRIMITIVE_FRAME(n) (stack_pointer = (STACK_LOC (-(n))))
+#define UN_POP_PRIMITIVE_FRAME(n, s) (decrement_sp ((n), s))
 
 DEFINE_PRIMITIVE ("APPLY", Prim_apply, 2, 2, "(PROCEDURE ARG-LIST)\n\
 Invokes PROCEDURE on the arguments in ARG-LIST.")
@@ -81,37 +81,39 @@ Invokes PROCEDURE on the arguments in ARG-LIST.")
 	error_wrong_type_arg (2);
     }
 
-    if (!CAN_PUSH_P (n_args + 2))
+    sstack_t* s = tctx_stack (tctx);
+    if (!stack_can_push_p (n_args + 2, s))
       error_bad_range_arg (2);
     POP_PRIMITIVE_FRAME (2);
 
     {
-      SCHEME_OBJECT p1 = args;
-      SCHEME_OBJECT * sp = (STACK_LOC (-n_args));
-      SCHEME_OBJECT * s1 = sp;
-      while (s1 != stack_pointer)
-	{
-	  (STACK_LOCATIVE_POP (s1)) = (PAIR_CAR (p1));
-	  p1 = (PAIR_CDR (p1));
-	}
-      stack_pointer = sp;
+      SCHEME_OBJECT* end = stack_pointer (s);
+      SCHEME_OBJECT* new_sp = end - n_args;
+      SCHEME_OBJECT* sscan = new_sp;
+      SCHEME_OBJECT pscan = args;
+      while (sscan < end)
+        {
+          *--sscan = PAIR_CAR (pscan);
+          pscan = PAIR_CDR (pscan);
+        }
+      set_stack_pointer(new_sp, s);;
     }
 
 #ifdef CC_SUPPORT_P
-    if (CC_RETURN_P (STACK_REF (n_args)))
+    if (CC_RETURN_P (stack_ref (n_args, s)))
       {
 	apply_compiled_from_primitive (n_args, procedure);
-	UN_POP_PRIMITIVE_FRAME (2);
+	UN_POP_PRIMITIVE_FRAME (2, s);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       }
     else
       {
-	assert (RETURN_CODE_P (STACK_REF (n_args)));
+	assert (RETURN_CODE_P (stack_ref (n_args, s)));
       }
 #endif
 
-    STACK_PUSH (procedure);
-    PUSH_APPLY_FRAME_HEADER (n_args);
+    stack_push (procedure, s);
+    stack_push (make_apply_frame_header (n_args + 1), s);
     PRIMITIVE_ABORT (PRIM_APPLY);
     /*NOTREACHED*/
     PRIMITIVE_RETURN (UNSPECIFIC);
@@ -131,7 +133,8 @@ DEFINE_PRIMITIVE ("CALL-WITH-CURRENT-CONTINUATION", Prim_catch, 1, 1,
 Invoke PROCEDURE with a copy of the current control stack.")
 {
   PRIMITIVE_HEADER (1);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
+  sstack_t* s = tctx_stack (tctx);
   {
     SCHEME_OBJECT procedure = (ARG_REF (1));
     SCHEME_OBJECT cp;
@@ -140,46 +143,40 @@ Invoke PROCEDURE with a copy of the current control stack.")
        RC_JOIN_STACKLETS frame, there's no need to create a new
        control point.  */
 
-    if (((STACK_LOC (1 + CONTINUATION_SIZE)) == STACK_BOTTOM)
-	&& (CHECK_RETURN_CODE (RC_JOIN_STACKLETS, 1))
-	&& (CONTROL_POINT_P (CONT_EXP (1))))
+    if ((stack_end (s) - stack_pointer (s) == 1 + CONTINUATION_SIZE)
+	&& (stack_ref (1, s) == MAKE_RETURN_CODE (RC_JOIN_STACKLETS))
+	&& (CONTROL_POINT_P (stack_ref (2, s))))
       {
-	cp = (CONT_EXP (1));
-	history_register = (OBJECT_ADDRESS (READ_DUMMY_HISTORY ()));
+	cp = stack_ref (2, s);
+        set_history (READ_DUMMY_HISTORY (), tctx);
 	POP_PRIMITIVE_FRAME (1);
-	STACK_RESET ();
+	stack_reset (s);
       }
     else
       {
-	cp = (allocate_control_point ((CONTINUATION_SIZE
-				       + HISTORY_SIZE
-				       + (STACK_N_PUSHED - 1)),
-				      true));
+	cp = allocate_control_point ((CONTINUATION_SIZE
+				      + HISTORY_SIZE
+				      + (stack_n_pushed (s) - 1)),
+				     true);
 	POP_PRIMITIVE_FRAME (1);
 
-	SAVE_HISTORY (RC_RESTORE_HISTORY);
-	preserve_interrupt_mask ();
-	prev_restore_history_offset = 0;
+	save_history (RC_RESTORE_HISTORY, tctx);
+	preserve_interrupt_mask (s);
+        set_restore_history_offset (0, tctx);
 	{
-	  SCHEME_OBJECT * scan = (control_point_start (cp));
-	  while (STACK_N_PUSHED > 0)
-	    (*scan++) = (STACK_POP ());
+	  SCHEME_OBJECT* scan = control_point_start (cp);
+	  while (stack_can_pop_p (1, s))
+	    (*scan++) = (stack_pop (s));
 	}
-#ifdef ENABLE_DEBUGGING_TOOLS
-	if (STACK_N_PUSHED != 0)
-	  Microcode_Termination (TERM_BAD_STACK);
-#endif
 
 	CLEAR_INTERRUPT (INT_Stack_Overflow);
-	STACK_RESET ();
-	SET_RC (RC_JOIN_STACKLETS);
-	SET_EXP (cp);
-	SAVE_CONT ();
+	stack_reset (s);
+        push_cont_rc (RC_JOIN_STACKLETS, cp, s);
       }
 
-    STACK_PUSH (cp);
-    STACK_PUSH (procedure);
-    PUSH_APPLY_FRAME_HEADER (1);
+    stack_push (cp, s);
+    stack_push (procedure, s);
+    stack_push (make_apply_frame_header (2), s);
   }
   PRIMITIVE_ABORT (PRIM_APPLY);
   /*NOTREACHED*/
@@ -201,29 +198,24 @@ DEFINE_PRIMITIVE ("WITHIN-CONTROL-POINT", Prim_within_control_point, 2, 2,
 		  "(CONTROL-POINT THUNK)\n\
 Invoke THUNK with CONTROL-POINT as its control stack.")
 {
-  SCHEME_OBJECT control_point, thunk;
   PRIMITIVE_HEADER (2);
-
-  canonicalize_primitive_context();
+  canonicalize_primitive_context (tctx);
   CHECK_ARG (1, CONTROL_POINT_P);
-  control_point = (ARG_REF (1));
-  thunk = (ARG_REF (2));
+  sstack_t* s = tctx_stack (tctx);
 
-  stack_pointer = STACK_BOTTOM;
+  SCHEME_OBJECT control_point = (ARG_REF (1));
+  SCHEME_OBJECT thunk = (ARG_REF (2));
+
+  set_stack_pointer (stack_end (s), s);
   /* We've discarded the history with the stack contents.  */
-  prev_restore_history_offset = 0;
+  set_restore_history_offset (0, tctx);
   CLEAR_INTERRUPT (INT_Stack_Overflow);
 
- Will_Push (CONTINUATION_SIZE);
-  SET_EXP (control_point);
-  SET_RC (RC_JOIN_STACKLETS);
-  SAVE_CONT ();
- Pushed ();
+  stack_check (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + 1, s);
+  push_cont_rc (RC_JOIN_STACKLETS, control_point, s);
 
- Will_Push (STACK_ENV_EXTRA_SLOTS + 1);
-  STACK_PUSH (thunk);
-  PUSH_APPLY_FRAME_HEADER (0);
- Pushed ();
+  stack_push (thunk, s);
+  stack_push (make_apply_frame_header (1), s);
 
   PRIMITIVE_ABORT (PRIM_APPLY);
   /*NOTREACHED*/
@@ -260,25 +252,23 @@ unpack_control_point (SCHEME_OBJECT cp)
       if (!CONTROL_POINT_P (cp))
 	Microcode_Termination (TERM_BAD_STACK);
     });
-  {
-    SCHEME_OBJECT * scan_from = (control_point_end (cp));
-    SCHEME_OBJECT * end_from = (control_point_start (cp));
 
-    stack_pointer = STACK_BOTTOM;
-    CLEAR_INTERRUPT (INT_Stack_Overflow);
-    STACK_CHECK (scan_from - end_from);
-    
-    while (scan_from > end_from)
-      STACK_PUSH (*--scan_from);
-  }
-  STACK_RESET ();
+  sstack_t* s = default_stack ();
+  SCHEME_OBJECT* scan_from = (control_point_end (cp));
+  SCHEME_OBJECT* end_from = (control_point_start (cp));
+  stack_reset (s);
+  CLEAR_INTERRUPT (INT_Stack_Overflow);
+  stack_check (scan_from - end_from, s);
+  while (scan_from > end_from)
+    stack_push (*--scan_from, s);
 }
 
 DEFINE_PRIMITIVE ("ERROR-PROCEDURE", Prim_error_procedure, 3, 3,
 		  "(MESSAGE IRRITANTS ENVIRONMENT)\nSignal an error.")
 {
   PRIMITIVE_HEADER (3);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
+  sstack_t* s = tctx_stack (tctx);
   {
     SCHEME_OBJECT message = (ARG_REF (1));
     SCHEME_OBJECT irritants = (ARG_REF (2));
@@ -286,16 +276,15 @@ DEFINE_PRIMITIVE ("ERROR-PROCEDURE", Prim_error_procedure, 3, 3,
     /* This is done outside the Will_Push because the space for it
        is guaranteed by the interpreter before it gets here.
        If done inside, this could break when using stacklets. */
-    back_out_of_primitive ();
-  Will_Push (HISTORY_SIZE + STACK_ENV_EXTRA_SLOTS + 4);
-    stop_history ();
+    back_out_of_primitive (tctx);
+    stack_check (HISTORY_SIZE + STACK_ENV_EXTRA_SLOTS + 4, s);
+    stop_history (tctx);
     /* Stepping should be cleared here! */
-    STACK_PUSH (environment);
-    STACK_PUSH (irritants);
-    STACK_PUSH (message);
-    STACK_PUSH (VECTOR_REF (fixed_objects, Error_Procedure));
-    PUSH_APPLY_FRAME_HEADER (3);
-  Pushed ();
+    stack_push (environment, s);
+    stack_push (irritants, s);
+    stack_push (message, s);
+    stack_push (VECTOR_REF (fixed_objects, Error_Procedure), s);
+    stack_push (make_apply_frame_header (4), s);
     PRIMITIVE_ABORT (PRIM_APPLY);
     /*NOTREACHED*/
     PRIMITIVE_RETURN (UNSPECIFIC);
@@ -307,16 +296,12 @@ DEFINE_PRIMITIVE ("SCODE-EVAL", Prim_scode_eval, 2, 2,
 Evaluate SCODE-EXPRESSION in ENVIRONMENT.")
 {
   PRIMITIVE_HEADER (2);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
   CHECK_ARG (2, ENVIRONMENT_P);
-  {
-    SCHEME_OBJECT expression = (ARG_REF (1));
-    SCHEME_OBJECT environment = (ARG_REF (2));
-    POP_PRIMITIVE_FRAME (2);
-    SET_ENV (environment);
-    SET_EXP (expression);
-  }
-  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION);
+  SCHEME_OBJECT exp = (ARG_REF (1));
+  SCHEME_OBJECT env = (ARG_REF (2));
+  POP_PRIMITIVE_FRAME (2);
+  PRIMITIVE_REDUCE (exp, env);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
@@ -328,44 +313,35 @@ memoized yet.")
 {
   PRIMITIVE_HEADER (1);
   CHECK_ARG (1, PROMISE_P);
-  {
-    SCHEME_OBJECT thunk = (ARG_REF (1));
-    SCHEME_OBJECT State = (MEMORY_REF (thunk, THUNK_SNAPPED));
-    if (State == SHARP_T)
-      PRIMITIVE_RETURN (MEMORY_REF (thunk, THUNK_VALUE));
-    else if (State ==  FIXNUM_ZERO)
+  sstack_t* s = tctx_stack (tctx);
+  SCHEME_OBJECT thunk = (ARG_REF (1));
+  SCHEME_OBJECT State = thunk_snapped (thunk);
+  if (State == SHARP_T)
+    PRIMITIVE_RETURN (thunk_value (thunk));
+  else if (State ==  FIXNUM_ZERO)
     {
       /* New-style thunk used by compiled code. */
-      canonicalize_primitive_context ();
+      canonicalize_primitive_context (tctx);
       POP_PRIMITIVE_FRAME (1);
-     Will_Push (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + 1);
-      SET_RC (RC_SNAP_NEED_THUNK);
-      SET_EXP (thunk);
-      SAVE_CONT ();
-      STACK_PUSH (MEMORY_REF (thunk, THUNK_VALUE));
-      PUSH_APPLY_FRAME_HEADER (0);
-     Pushed ();
+      stack_check (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + 1, s);
+      push_cont_rc (RC_SNAP_NEED_THUNK, thunk, s);
+      stack_push (thunk_value (thunk), s);
+      stack_push (make_apply_frame_header (1), s);
       PRIMITIVE_ABORT (PRIM_APPLY);
       /*NOTREACHED*/
       PRIMITIVE_RETURN (UNSPECIFIC);
     }
-    else
+  else
     {
       /* Old-style thunk used by interpreted code. */
-      canonicalize_primitive_context ();
+      canonicalize_primitive_context (tctx);
       POP_PRIMITIVE_FRAME (1);
-     Will_Push (CONTINUATION_SIZE);
-      SET_RC (RC_SNAP_NEED_THUNK);
-      SET_EXP (thunk);
-      SAVE_CONT ();
-     Pushed ();
-      SET_ENV (MEMORY_REF (thunk, THUNK_ENVIRONMENT));
-      SET_EXP (MEMORY_REF (thunk, THUNK_PROCEDURE));
-      PRIMITIVE_ABORT (PRIM_DO_EXPRESSION);
+      stack_check (CONTINUATION_SIZE, s);
+      push_cont_rc (RC_SNAP_NEED_THUNK, thunk, s);
+      PRIMITIVE_REDUCE (thunk_procedure (thunk), thunk_environment (thunk));
       /*NOTREACHED*/
       PRIMITIVE_RETURN (UNSPECIFIC);
     }
-  }
 }
 
 /* Interrupts */
@@ -460,24 +436,17 @@ This is used by the runtime system to create stack frames that can be\n\
 identified by the continuation parser.")
 {
   PRIMITIVE_HEADER (LEXPR);
-  canonicalize_primitive_context ();
-  {
-    unsigned long nargs = GET_LEXPR_ACTUALS;
-    if (nargs < 2)
-      signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-    {
-      SCHEME_OBJECT thunk = (STACK_POP ());
-      PUSH_APPLY_FRAME_HEADER (nargs - 2);
-      SET_ENV (THE_NULL_ENV);
-      SET_EXP (SHARP_F);
-      SET_RC (RC_INTERNAL_APPLY);
-      SAVE_CONT ();
-    Will_Push (STACK_ENV_EXTRA_SLOTS + 1);
-      STACK_PUSH (thunk);
-      PUSH_APPLY_FRAME_HEADER (0);
-    Pushed ();
-    }
-  }
+  canonicalize_primitive_context (tctx);
+  sstack_t* s = tctx_stack (tctx);
+  unsigned long nargs = primitive_lexpr_actuals (tctx);
+  if (nargs < 2)
+    signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+  SCHEME_OBJECT thunk = (stack_pop (s));
+  stack_push (make_apply_frame_header (nargs - 1), s);
+  push_cont_env (RC_INTERNAL_APPLY, SHARP_F, THE_NULL_ENV, s);
+  stack_check (STACK_ENV_EXTRA_SLOTS + 1, s);
+  stack_push (thunk, s);
+  stack_push (make_apply_frame_header (0), s);
   PRIMITIVE_ABORT (PRIM_APPLY);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
@@ -493,25 +462,25 @@ By convention, MARKER1 is a tag identifying the kind of marker,\n\
 and MARKER2 is data identifying the marker instance.")
 {
   PRIMITIVE_HEADER (3);
+  sstack_t* s = tctx_stack (tctx);
   {
     SCHEME_OBJECT thunk = (ARG_REF (1));
 #ifdef CC_SUPPORT_P
-    if ((CC_RETURN_P (STACK_REF (3))) && (CC_ENTRY_P (thunk)))
+    if ((CC_RETURN_P (stack_ref (3, s))) && (CC_ENTRY_P (thunk)))
       {
-	(void) STACK_POP ();
+	(void) stack_pop (s);
 	compiled_with_stack_marker (thunk);
-	UN_POP_PRIMITIVE_FRAME (3);
+	UN_POP_PRIMITIVE_FRAME (3, s);
       }
     else
 #endif
       {
-	canonicalize_primitive_context ();
-	(void) STACK_POP ();
-	STACK_PUSH (MAKE_RETURN_CODE (RC_STACK_MARKER));
-	Will_Push (STACK_ENV_EXTRA_SLOTS + 1);
-	STACK_PUSH (thunk);
-	PUSH_APPLY_FRAME_HEADER (0);
-	Pushed ();
+	canonicalize_primitive_context (tctx);
+	(void) stack_pop (s);
+	stack_push (MAKE_RETURN_CODE (RC_STACK_MARKER), s);
+	stack_check (STACK_ENV_EXTRA_SLOTS + 1, s);
+	stack_push (thunk, s);
+	stack_push (make_apply_frame_header (1), s);
 	PRIMITIVE_ABORT (PRIM_APPLY);
 	/*NOTREACHED*/
       }
@@ -525,7 +494,7 @@ Set the interrupt mask to MASK for the duration of the call to RECEIVER.\n\
 RECEIVER is passed the old interrupt mask as its argument.")
 {
   PRIMITIVE_HEADER (2);
-  with_new_interrupt_mask (INT_Mask & (arg_integer (1)));
+  with_new_interrupt_mask (INT_Mask & arg_integer (1), tctx);
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
@@ -539,36 +508,38 @@ Like WITH-INTERRUPT-MASK, but only disables interrupts.")
   old_mask = GET_INT_MASK;
   new_mask = (INT_Mask & (arg_ulong_integer (1)));
   with_new_interrupt_mask
-    ((new_mask > old_mask) ? new_mask : (new_mask & old_mask));
+    ((new_mask > old_mask) ? new_mask : (new_mask & old_mask),
+     tctx);
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 static void
-with_new_interrupt_mask (unsigned long new_mask)
+with_new_interrupt_mask (unsigned long new_mask, tctx_t* tctx)
 {
+  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT receiver = (ARG_REF (2));
 
 #ifdef CC_SUPPORT_P
-  if ((CC_RETURN_P (STACK_REF (2))) && (CC_ENTRY_P (receiver)))
+  if ((CC_RETURN_P (stack_ref (2, s))) && (CC_ENTRY_P (receiver)))
     {
       unsigned long current_mask = GET_INT_MASK;
-      POP_PRIMITIVE_FRAME (2);
+      increment_sp (2, s);
       compiled_with_interrupt_mask (current_mask, receiver, new_mask);
-      UN_POP_PRIMITIVE_FRAME (2);
-      SET_INTERRUPT_MASK (new_mask);
+      UN_POP_PRIMITIVE_FRAME (2, s);
+      SET_INT_MASK (new_mask);
+      compiler_setup_interrupt (s);
     }
   else
 #endif
     {
-      canonicalize_primitive_context ();
-      POP_PRIMITIVE_FRAME (2);
-      preserve_interrupt_mask ();
-      Will_Push (STACK_ENV_EXTRA_SLOTS + 2);
-      STACK_PUSH (ULONG_TO_FIXNUM (GET_INT_MASK));
-      STACK_PUSH (receiver);
-      PUSH_APPLY_FRAME_HEADER (1);
-      Pushed ();
-      SET_INTERRUPT_MASK (new_mask);
+      canonicalize_primitive_context (tctx);
+      increment_sp (2, s);
+      preserve_interrupt_mask (s);
+      stack_check (STACK_ENV_EXTRA_SLOTS + 2, s);
+      stack_push (ULONG_TO_FIXNUM (GET_INT_MASK), s);
+      stack_push (receiver, s);
+      stack_push (make_apply_frame_header (2), s);
+      SET_INT_MASK (new_mask);
       PRIMITIVE_ABORT (PRIM_APPLY);
     }
 }
@@ -576,12 +547,11 @@ with_new_interrupt_mask (unsigned long new_mask)
 /* History */
 
 SCHEME_OBJECT
-initialize_history (void)
+initialize_history (tctx_t* tctx)
 {
   /* Dummy History Structure */
-  history_register = (make_dummy_history ());
-  return
-    (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, (make_dummy_history ())));
+  set_history (make_dummy_history (), tctx);
+  return make_dummy_history ();
 }
 
 DEFINE_PRIMITIVE ("SET-CURRENT-HISTORY!", Prim_set_current_history, 1, 1,
@@ -589,7 +559,7 @@ DEFINE_PRIMITIVE ("SET-CURRENT-HISTORY!", Prim_set_current_history, 1, 1,
 Set the interpreter's history object to HISTORY.")
 {
   PRIMITIVE_HEADER (1);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
   CHECK_ARG (1, HUNK3_P);
   SET_VAL (*history_register);
 #ifndef DISABLE_HISTORY

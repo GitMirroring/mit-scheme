@@ -38,7 +38,7 @@ USA.
 #include "const.h"		/* Various named constants */
 #include "object.h"		/* Scheme object representation */
 #include "stack.h"              // Stack abstraction
-#include "context.h"            // Per-thread context
+#include "tcontext.h"            // Per-thread context
 #include "registers.h"          // Register block
 #include "intrpt.h"		/* Interrupt processing macros */
 #include "critsec.h"		/* Critical sections */

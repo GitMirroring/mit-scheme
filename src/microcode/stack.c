@@ -28,7 +28,7 @@ USA.
 /* Stack abstraction */
 
 #include "const.h"
-#include "context.h"
+#include "tcontext.h"
 #include "object.h"
 #include "stack.h"
 
@@ -53,11 +53,11 @@ default_stack ()
 sstack_t*
 current_stack ()
 {
-  return ptctx_stack (current_ptctx ());
+  return tctx_stack (current_tctx ());
 }
 
 void
-reset_stack (sstack_t* s)
+stack_reset (sstack_t* s)
 {
   s->pointer = s->end;
   *s->start = (MAKE_BROKEN_HEART (s->start));

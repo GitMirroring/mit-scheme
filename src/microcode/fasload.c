@@ -70,7 +70,7 @@ static unsigned long reload_constant_size = 0;
 static void init_fasl_file (const char *, bool, fasl_file_handle_t *);
 static void close_fasl_file (void *);
 
-static SCHEME_OBJECT load_file (fasl_file_handle_t, unsigned long);
+static SCHEME_OBJECT load_file (fasl_file_handle_t, unsigned long, tctx_t*);
 static void * read_from_file (void *, size_t, fasl_file_handle_t);
 static bool primitive_numbers_unchanged_p (SCHEME_OBJECT *);
 
@@ -107,7 +107,7 @@ that was dumped.")
   SCHEME_OBJECT result;
   PRIMITIVE_HEADER (1);
 
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
   transaction_begin ();
 
   init_fasl_file ((STRING_ARG (1)), false, (&handle));
@@ -133,7 +133,7 @@ that was dumped.")
     }
   failed_heap_length = 0;
 
-  result = (load_file (handle, ephemeron_count));
+  result = (load_file (handle, ephemeron_count, tctx));
   transaction_commit ();
   PRIMITIVE_RETURN (result);
 }
@@ -201,7 +201,7 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
   PRIMITIVE_HEADER (1);
 
   CHECK_ARG (1, STRING_P);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
   SCHEME_OBJECT result = (read_band_file (ARG_REF (1)));
 
   /* Reset implementation state parameters.  */
@@ -216,21 +216,21 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
   fixed_objects = SHARP_F;
 
   /* Setup initial program */
-  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, ptctx_stack (ptctx));
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, tctx_stack (tctx));
 
   SCHEME_OBJECT exp = PAIR_CAR (result);
   SCHEME_OBJECT env = THE_GLOBAL_ENV;
 
   /* Clear various interpreter state parameters.  */
   trapping = false;
-  set_history (make_dummy_history (), ptctx);
-  set_restore_history_offset (0, ptctx);
+  set_history (make_dummy_history (), tctx);
+  set_restore_history_offset (0, tctx);
   CC_TRANSPORT_END ();
   execute_reload_cleanups ();
   EXIT_CRITICAL_SECTION ({});
 
   /* Return in a non-standard way. */
-  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION, ptctx);
+  PRIMITIVE_REDUCE (exp, env);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
@@ -271,7 +271,7 @@ read_band_file (SCHEME_OBJECT s)
     ((FASLHDR_CONSTANT_SIZE (fh)), (FASLHDR_HEAP_RESERVED (fh)));
   /* We cleared the heap; the ephemeron array is now bogus.  */
   ephemeron_array = SHARP_F;
-  result = (load_file (handle, 0));
+  result = (load_file (handle, 0, default_tctx ()));
 
   /* Done -- we have the new image.  */
   transaction_commit ();
@@ -288,16 +288,14 @@ read_band_file (SCHEME_OBJECT s)
 static void
 terminate_band_load (void * ap)
 {
-  struct load_band_termination_state * state = ap;
-  int abort_value;
-
+  struct load_band_termination_state* state = ap;
   if (! (state->no_return_p))
     {
       OS_free ((void *) (state->file_name));
       return;
     }
 
-  abort_value = (abort_to_interpreter_argument ());
+  int abort_value = (abort_to_interpreter_argument (current_tctx ()));
 
   fputs ("\nload-band: ", stderr);
   if (abort_value > 0)
@@ -369,12 +367,14 @@ execute_reload_cleanups (void)
 }
 
 static SCHEME_OBJECT
-load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count)
+load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
+           tctx_t* tctx)
 {
+  sstack_t* s = tctx_stack (tctx);
   new_heap_start = Free;
   new_constant_start = constant_alloc_next;
-  new_stack_start = stack_start;
-  new_stack_end = stack_end;
+  new_stack_start = stack_start (s);
+  new_stack_end = stack_end (s);
   new_utilities
     = ((compiler_utilities == SHARP_F)
        ? 0
@@ -597,9 +597,8 @@ relocate_address (void * vaddr)
     result
       = (((uint8_t *) new_utilities)
 	 + (caddr - ((uint8_t *) (FASLHDR_UTILITIES_START (fh)))));
-  else if (ADDRESS_IN_STACK_REGION_P (caddr,
-				      ((uint8_t *) (FASLHDR_STACK_START (fh))),
-				      ((uint8_t *) (FASLHDR_STACK_END (fh)))))
+  else if (caddr >= (uint8_t *) (FASLHDR_STACK_START (fh))
+           && caddr < (uint8_t *) (FASLHDR_STACK_END (fh)))
     result
       = (N_PUSHED_TO_SP
 	 ((SP_TO_N_PUSHED (caddr,
