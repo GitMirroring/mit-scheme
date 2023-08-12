@@ -869,6 +869,7 @@ void
 interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
   int_action_t action = eval (exp, env, tctx);
+  sstack_t* s = tctx_stack (tctx);
   while (true)
     switch (action)
       {
@@ -881,9 +882,8 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
         break;
 
       case INT_ACTION_EVAL:
-        SCHEME_OBJECT exp2 = get_val (0, tctx);
-        SCHEME_OBJECT env2 = get_val (1, tctx);
-        reset_vals (tctx);
+        SCHEME_OBJECT exp2 = stack_pop (s);
+        SCHEME_OBJECT env2 = stack_pop (s);
         action = eval (exp2, env2, tctx);
         break;
 

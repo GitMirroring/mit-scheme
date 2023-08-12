@@ -150,6 +150,7 @@ apply_frame_n_args (sstack_t* s)
   return apply_frame_header_n_args (apply_frame_header (s));
 }
 
+extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern void primitive_apply_internal (SCHEME_OBJECT, tctx_t*);
 
 #endif /* not SCM_INTERP_H */
