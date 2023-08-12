@@ -109,7 +109,7 @@ initialize_interrupt_mask_vector (void)
    of the setup for calling the user's interrupt routines. */
 
 void
-setup_interrupt (unsigned long masked_interrupts)
+setup_interrupt (unsigned long masked_interrupts, tctx_t* tctx)
 {
   SCHEME_OBJECT interrupt_handlers = SHARP_F;
   SCHEME_OBJECT interrupt_masks = SHARP_F;

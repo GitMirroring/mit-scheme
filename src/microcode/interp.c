@@ -49,8 +49,8 @@ eval_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 static inline int_action_t
 eval_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  new_reduction (new_exp, env, tctx);
-  return re_eval (new_exp, env, tctx);
+  new_reduction (exp, env, tctx);
+  return re_eval (exp, env, tctx);
 }
 
 static inline int_action_t
@@ -208,13 +208,16 @@ eval_variable (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
   long code = (lookup_variable (env, variable_name (exp), (&val)));
   if (code == PRIM_DONE)
     return single_val (val, tctx);
-  if ((VARIABLE_SAFE_P (exp)) && (code == ERR_UNASSIGNED_VARIABLE))
+  if (variable_safe_p (exp) && (code == ERR_UNASSIGNED_VARIABLE))
     return single_val (UNASSIGNED_OBJECT, tctx);
   /* Back out of the evaluation. */
   if (code == PRIM_INTERRUPT)
     {
-      PREPARE_EVAL_REPEAT ();
-      SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+      sstack_t* s = tctx_stack (tctx);
+      stack_check (CONTINUATION_SIZE + 1, s);
+      push_cont_env (RC_EVAL_ERROR, exp, env, s);
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
+      return INT_ACTION_APPLY_PROC;
     }
   return eval_error (code);
 }
@@ -240,9 +243,11 @@ eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
       return eval_comment (exp, env, tctx);
 
 #ifdef CC_SUPPORT_P
+#if 0
     case TC_COMPILED_ENTRY:
       dispatch_code = (enter_compiled_expression ());
       goto return_from_compiled_code;
+#endif
 #endif
 
     case TC_CONDITIONAL:
@@ -334,7 +339,7 @@ cont_disjunction_decide (SCHEME_OBJECT exp, tctx_t* tctx)
 {
   /* Return predicate if it isn't #F; else do ALTERNATIVE */
   end_subproblem (tctx);
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx))
+  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
   SCHEME_OBJECT val = get_single_val (tctx);
   if (val != SHARP_F)
     return single_val (val, tctx);
@@ -352,6 +357,7 @@ static inline int_action_t
 cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
   SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT val;
   long code = (lookup_variable (env, access_name (exp), (&val)));
   switch (code)
@@ -361,12 +367,13 @@ cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       return single_val (val, tctx);
 
     case PRIM_INTERRUPT:
-      PREPARE_POP_RETURN_INTERRUPT (RC_EXECUTE_ACCESS_FINISH, );
-      SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+      push_cont_rc (RC_EXECUTE_ACCESS_FINISH, exp, s);
+      push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), s);
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
 
     default:
-      push_cont (ret, exp, tctx_stack (tctx));
+      push_cont (ret, exp, s);
       return eval_error (code);
     }
 }
@@ -392,7 +399,7 @@ cont_assignment_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
   if (code == PRIM_INTERRUPT)
     {
       push_cont_rc (RC_RESTORE_VALUE, val, tctx_stack (tctx));
-      setup_interrupt (PENDING_INTERRUPTS ());
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
   return eval_error (code);
@@ -415,7 +422,7 @@ cont_definition_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
   if (code == PRIM_INTERRUPT)
     {
       push_cont_rc (RC_RESTORE_VALUE, val, tctx_stack (tctx));
-      setup_interrupt (PENDING_INTERRUPTS ());
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
   return eval_error (code);
@@ -452,7 +459,7 @@ cont_end_of_computation (tctx_t* tctx)
   interpreter_state_t* previous_state = state->previous_state;
   if (previous_state != NULL_INTERPRETER_STATE)
     {
-      set_dstack_position (state->dstack_position, tctx);
+      dstack_set_position (state->dstack_position);
       set_interpreter_state (previous_state, tctx);
     }
   return INT_ACTION_DONE;
@@ -469,11 +476,12 @@ cont_sequence_finish (SCHEME_OBJECT exp, tctx_t* tctx)
 static int_action_t
 apply_cont (tctx_t* tctx)
 {
-  if (!RETURN_CODE_P (stack_ref (0, tctx_stack (tctx))))
+  sstack_t* s = tctx_stack (tctx);
+  if (!RETURN_CODE_P (stack_ref (0, s)))
     Microcode_Termination (TERM_BAD_STACK);
 
-  SCHEME_OBJECT ret = stack_pop (tctx_stack (tctx));
-  SCHEME_OBJECT exp = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT ret = stack_pop (s);
+  SCHEME_OBJECT exp = stack_pop (s);
   switch (OBJECT_DATUM (ret))
     {
     case RC_COMB_APPLY_FUNCTION:
@@ -502,22 +510,21 @@ apply_cont (tctx_t* tctx)
       return INT_ACTION_APPLY_PROC;
     case RC_INTERNAL_APPLY_VAL:
       {
-        stack_set (1, (get_single_val (tctx)), tctx);
+        stack_set (1, (get_single_val (tctx)), s);
         return INT_ACTION_APPLY_PROC;
       }
 
     case RC_JOIN_STACKLETS:
-      unpack_control_point (exp, tctx);
+      unpack_control_point (exp, s);
       return INT_ACTION_APPLY_CONT;
 
     case RC_NORMAL_GC_DONE:
-      SET_VAL (GET_EXP);
       /* Paranoia */
       if (GC_NEEDED_P (gc_space_needed))
         termination_gc_out_of_space ();
       gc_space_needed = 0;
-      EXIT_CRITICAL_SECTION ({ PUSH_CONT (GET_RET, GET_EXP); });
-      break;
+      EXIT_CRITICAL_SECTION ({ push_cont (ret, exp, s); });
+      return single_val (exp, tctx);
 
     case RC_POP_RETURN_ERROR:
     case RC_RESTORE_VALUE:
@@ -531,28 +538,24 @@ apply_cont (tctx_t* tctx)
        to the previous restore history return code.  */
 
     case RC_RESTORE_DONT_COPY_HISTORY:
-      {
-        increment_sp (1, tctx_stack (tctx)); // obsolete field
-        set_history (exp, tctx);
-        set_prev_restore_history_offset (stack_pop (tctx_stack (tctx)));
-        return INT_ACTION_APPLY_CONT;
-      }
+      increment_sp (1, s);    // obsolete field
+      set_history (exp, tctx);
+      set_restore_history_offset (stack_pop (s), tctx);
+      return INT_ACTION_APPLY_CONT;
 
     case RC_RESTORE_HISTORY:
-      {
-        if (!restore_history (exp, tctx))
-          {
-            push_cont (ret, exp, tctx_stack (tctx));
-            stack_check (CONTINUATION_SIZE, tctx_stack (tctx));
-            push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx),
-                          tctx_stack (tctx));
-            IMMEDIATE_GC (HEAP_AVAILABLE);
-          }
-        increment_sp (1, tctx_stack (tctx)); // obsolete field
-        set_restore_history_offset_and_mark (stack_pop (tctx_stack (tctx)),
-                                             tctx);
-        return INT_ACTION_APPLY_CONT;
-      }
+      if (!restore_history (exp, tctx))
+        {
+          push_cont (ret, exp, s);
+          stack_check (CONTINUATION_SIZE, s);
+          push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), s);
+          REQUEST_GC (HEAP_AVAILABLE);
+          setup_interrupt (PENDING_INTERRUPTS (), tctx);
+          return INT_ACTION_APPLY_PROC;
+        }
+      increment_sp (1, s); // obsolete field
+      set_restore_history_offset_and_mark (stack_pop (s), tctx);
+      return INT_ACTION_APPLY_CONT;
 
     case RC_RESTORE_INT_MASK:
       SET_INTERRUPT_MASK (UNSIGNED_FIXNUM_TO_LONG (exp));
@@ -560,26 +563,27 @@ apply_cont (tctx_t* tctx)
         REQUEST_GC (0);
       if (PENDING_INTERRUPTS_P)
         {
-          push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx),
-                        tctx_stack (tctx));
-          SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+          push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), s);
+          setup_interrupt (PENDING_INTERRUPTS (), tctx);
+          return INT_ACTION_APPLY_PROC;
         }
-      break;
+      return INT_ACTION_APPLY_CONT;
 
     case RC_STACK_MARKER:
       /* Frame consists of the return code followed by two objects.
          The first object has already been popped into exp,
          so just pop the second argument.  */
-      increment_sp (1, tctx_stack (tctx));
-      break;
+      increment_sp (1, s);
+      return INT_ACTION_APPLY_CONT;
 
     case RC_EXECUTE_SEQUENCE_FINISH:
       return cont_sequence_finish (exp, tctx);
 
     case RC_SNAP_NEED_THUNK:
-      return single_value (snap_delayed (exp, get_single_val (tctx)), tctx);
+      return single_val (snap_delayed (exp, get_single_val (tctx)), tctx);
 
 #ifdef CC_SUPPORT_P
+#if 0
 #define CREST(return_code, entry)                                       \
     case return_code:                                                   \
       {                                                                 \
@@ -600,9 +604,12 @@ apply_cont (tctx_t* tctx)
       dispatch_code = return_to_compiled_code ();
       return INT_ACTION_RETURN_FROM_COMPILED_CODE;
 #endif
+#endif
 
     default:
-      POP_RETURN_ERROR (ERR_INAPPLICABLE_CONTINUATION);
+      push_cont (ret, exp, s);
+      Do_Micro_Error (ERR_INAPPLICABLE_CONTINUATION, true);
+      return INT_ACTION_APPLY_PROC;
     }
 }
 
@@ -625,14 +632,15 @@ apply_proc (tctx_t* tctx)
        registers are cleared to avoid holding onto garbage if a
        garbage collection occurs.  */
 
+  sstack_t* s = tctx_stack (tctx);
   if (PENDING_INTERRUPTS_P)
     {
       unsigned long interrupts = (PENDING_INTERRUPTS ());
-      PREPARE_APPLY_INTERRUPT ();
-      SIGNAL_INTERRUPT (interrupts);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+      setup_interrupt (interrupts, tctx);
+      return INT_ACTION_APPLY_PROC;
     }
 
-  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT proc = (apply_frame_proc (s));
   switch (OBJECT_TYPE (proc))
     {
@@ -647,7 +655,7 @@ apply_proc (tctx_t* tctx)
           set_apply_frame_proc (VECTOR_REF (data, frame_size), s);
         else
           {
-            increment_sp (1, tctx); // discard header
+            increment_sp (1, s); // discard header
             stack_push (entity_operator (proc), s);
             stack_push (make_apply_frame_header (frame_size + 1), s);
           }
@@ -663,7 +671,11 @@ apply_proc (tctx_t* tctx)
       {
         SCHEME_OBJECT applicator = record_applicator (proc);
         if (applicator == SHARP_F)
-          APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
+          {
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+            Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true);
+            return INT_ACTION_APPLY_PROC;
+          }
         unsigned long frame_size = apply_frame_size (s);
         increment_sp (1, s); // discard header
         stack_push (applicator, s);
@@ -681,12 +693,18 @@ apply_proc (tctx_t* tctx)
           if ((frame_size != VECTOR_LENGTH (names))
               && ((OBJECT_TYPE (lambda) != TC_LEXPR)
                   || (frame_size < VECTOR_LENGTH (names))))
-            APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+            {
+              push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+              Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+              return INT_ACTION_APPLY_PROC;
+            }
         }
         if (GC_NEEDED_P (frame_size + 1))
           {
-            PREPARE_APPLY_INTERRUPT ();
-            IMMEDIATE_GC (frame_size + 1);
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+            REQUEST_GC (frame_size + 1);
+            setup_interrupt (PENDING_INTERRUPTS (), tctx);
+            return INT_ACTION_APPLY_PROC;
           }
         SCHEME_OBJECT* end = Free + 1 + frame_size;
         SCHEME_OBJECT env = MAKE_POINTER_OBJECT (TC_ENVIRONMENT, Free);
@@ -699,24 +717,36 @@ apply_proc (tctx_t* tctx)
 
     case TC_CONTROL_POINT:
       if (apply_frame_size (s) != 2)
-        APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-      SCHEME_OBJECT val = *(apply_frame_args (s));
-      unpack_control_point (proc, tctx);
+        {
+          push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+          Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+          return INT_ACTION_APPLY_PROC;
+        }
+      SCHEME_OBJECT val = apply_frame_first_arg (s);
+      unpack_control_point (proc, s);
       reset_history (tctx);
       return single_val (val, tctx);
 
     case TC_PRIMITIVE:
       if (!IMPLEMENTED_PRIMITIVE_P (proc))
-        APPLICATION_ERROR (ERR_UNIMPLEMENTED_PRIMITIVE);
+        {
+          push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+          Do_Micro_Error (ERR_UNIMPLEMENTED_PRIMITIVE, true);
+          return INT_ACTION_APPLY_PROC;
+        }
       {
         unsigned long n_args = apply_frame_n_args (s);
         if (PRIMITIVE_ARITY (proc) == LEXPR_PRIMITIVE_ARITY)
           set_primitive_lexpr_actuals (n_args, tctx);
         else if (PRIMITIVE_ARITY (proc) != n_args)
-          APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+          {
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+            Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+            return INT_ACTION_APPLY_PROC;
+          }
 
         // Primitives don't need header and proc:
-        increment_sp (2, tctx);
+        increment_sp (2, s);
         primitive_apply_internal (proc, tctx);
         increment_sp (n_args, s);
         return INT_ACTION_APPLY_CONT;
@@ -736,7 +766,9 @@ apply_proc (tctx_t* tctx)
 
         if ((nargs < reqs) || ((rest == 0) && (nargs > nfixed)))
           {
-            APPLICATION_ERROR (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+            Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+            return INT_ACTION_APPLY_PROC;
           }
 
         unsigned long size = (/* proc: */ 1 + nparams + naux);
@@ -747,8 +779,10 @@ apply_proc (tctx_t* tctx)
             + ((nargs > nfixed) ? (2 * (nargs - nfixed)) : 0);
         if (GC_NEEDED_P (nwords))
           {
-            PREPARE_APPLY_INTERRUPT ();
-            IMMEDIATE_GC (nwords);
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+            REQUEST_GC (nwords);
+            setup_interrupt (PENDING_INTERRUPTS (), tctx);
+            return INT_ACTION_APPLY_PROC;
           }
         increment_sp (1, s); // discard header
         SCHEME_OBJECT* scan = Free;
@@ -790,37 +824,74 @@ apply_proc (tctx_t* tctx)
       }
 
 #ifdef CC_SUPPORT_P
-case TC_COMPILED_ENTRY:
-  {
-    guarantee_cc_return (1 + apply_frame_size (tctx));
-    long dispatch_code = apply_compiled_procedure ();
-    switch (dispatch_code)
+    case TC_COMPILED_ENTRY:
       {
-      case PRIM_DONE:
-        return single_val (???, tctx);
+        guarantee_cc_return (1 + apply_frame_size (s));
+        long dispatch_code = apply_compiled_procedure ();
+        switch (dispatch_code)
+          {
+          case PRIM_DONE:
+            return single_val (GET_CC_VAL, tctx);
 
-      case PRIM_APPLY:
-        return INT_ACTION_APPLY_PROC;
+          case PRIM_APPLY:
+            return INT_ACTION_APPLY_PROC;
 
-      case PRIM_INTERRUPT:
-        SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+          case PRIM_INTERRUPT:
+            setup_interrupt (PENDING_INTERRUPTS (), tctx);
+            return INT_ACTION_APPLY_PROC;
 
-      case PRIM_APPLY_INTERRUPT:
-        PREPARE_APPLY_INTERRUPT ();
-        SIGNAL_INTERRUPT (PENDING_INTERRUPTS ());
+          case PRIM_APPLY_INTERRUPT:
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+            setup_interrupt (PENDING_INTERRUPTS (), tctx);
+            return INT_ACTION_APPLY_PROC;
 
-      case ERR_INAPPLICABLE_OBJECT:
-      case ERR_WRONG_NUMBER_OF_ARGUMENTS:
-        APPLICATION_ERROR (dispatch_code);
+          case ERR_INAPPLICABLE_OBJECT:
+          case ERR_WRONG_NUMBER_OF_ARGUMENTS:
+            push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+            Do_Micro_Error (dispatch_code, true);
+            return INT_ACTION_APPLY_PROC;
 
-      default:
-        Do_Micro_Error (dispatch_code, true);
-        return INT_ACTION_APPLY_PROC;
+          default:
+            Do_Micro_Error (dispatch_code, true);
+            return INT_ACTION_APPLY_PROC;
+          }
       }
-  }
 #endif
 
     default:
-      APPLICATION_ERROR (ERR_INAPPLICABLE_OBJECT);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true);
+      return INT_ACTION_APPLY_PROC;
     }
+}
+
+void
+interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  int_action_t action = eval (exp, env, tctx);
+  while (true)
+    switch (action)
+      {
+      case INT_ACTION_APPLY_CONT:
+        action = apply_cont (tctx);
+        break;
+
+      case INT_ACTION_APPLY_PROC:
+        action = apply_proc (tctx);
+        break;
+
+      case INT_ACTION_EVAL:
+        SCHEME_OBJECT exp2 = get_val (0, tctx);
+        SCHEME_OBJECT env2 = get_val (1, tctx);
+        reset_vals (tctx);
+        action = eval (exp2, env2, tctx);
+        break;
+
+      case INT_ACTION_RETURN_FROM_COMPILED_CODE:
+        // ??????
+        break;
+
+      case INT_ACTION_DONE:
+        return;
+      }
 }

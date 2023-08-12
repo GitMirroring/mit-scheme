@@ -245,7 +245,7 @@ control_point_end (SCHEME_OBJECT cp)
 }
 
 void
-unpack_control_point (SCHEME_OBJECT cp)
+unpack_control_point (SCHEME_OBJECT cp, sstack_t* s)
 {
   WHEN_DEBUGGING
     ({
@@ -253,7 +253,6 @@ unpack_control_point (SCHEME_OBJECT cp)
 	Microcode_Termination (TERM_BAD_STACK);
     });
 
-  sstack_t* s = default_stack ();
   SCHEME_OBJECT* scan_from = (control_point_end (cp));
   SCHEME_OBJECT* end_from = (control_point_start (cp));
   stack_reset (s);
@@ -561,11 +560,11 @@ Set the interpreter's history object to HISTORY.")
   PRIMITIVE_HEADER (1);
   canonicalize_primitive_context (tctx);
   CHECK_ARG (1, HUNK3_P);
-  SET_VAL (*history_register);
+  add_val (get_history (tctx), tctx);
 #ifndef DISABLE_HISTORY
-  history_register = (OBJECT_ADDRESS (ARG_REF (1)));
+  set_history (ARG_REF (1), tctx);
 #else
-  history_register = (OBJECT_ADDRESS (READ_DUMMY_HISTORY ()));
+  set_history (READ_DUMMY_HISTORY (), tctx);
 #endif
   POP_PRIMITIVE_FRAME (1);
   PRIMITIVE_ABORT (PRIM_POP_RETURN);
@@ -577,43 +576,35 @@ DEFINE_PRIMITIVE ("WITH-HISTORY-DISABLED", Prim_with_history_disabled, 1, 1,
 		  "(THUNK)\nExecute THUNK with the interpreter's history OFF.")
 {
   PRIMITIVE_HEADER (1);
-  canonicalize_primitive_context ();
-  {
-    SCHEME_OBJECT thunk = (ARG_REF (1));
-    /* Remove one reduction from the history before saving it */
-    SCHEME_OBJECT * first_rib = (OBJECT_ADDRESS (history_register [HIST_RIB]));
-    SCHEME_OBJECT * second_rib =
-      (OBJECT_ADDRESS (first_rib [RIB_NEXT_REDUCTION]));
-    if ((first_rib != second_rib) &&
-	(! (HISTORY_MARKED_P (first_rib [RIB_MARK]))))
-      {
-	HISTORY_MARK (second_rib [RIB_MARK]);
+  canonicalize_primitive_context (tctx);
+  SCHEME_OBJECT thunk = (ARG_REF (1));
+  /* Remove one reduction from the history before saving it */
+  SCHEME_OBJECT history = get_history (tctx);
+  SCHEME_OBJECT first_rib = history_rib (history);
+  SCHEME_OBJECT second_rib = history_rib_next (first_rib);
+  if (first_rib != second_rib && !marked_history_p (first_rib))
+    {
+      mark_history_rib (second_rib);
+      SCHEME_OBJECT rib = first_rib;
+      while (true)
 	{
-	  SCHEME_OBJECT * rib = first_rib;
-	  while (1)
-	    {
-	      SCHEME_OBJECT * next_rib =
-		(OBJECT_ADDRESS (rib [RIB_NEXT_REDUCTION]));
-	      if (next_rib == first_rib)
-		break;
-	      rib = next_rib;
-	    }
-	  /* This maintains the mark in (history_register [HIST_RIB]). */
-	  (history_register [HIST_RIB]) =
-	    (MAKE_POINTER_OBJECT ((OBJECT_TYPE (history_register [HIST_RIB])),
-				  rib));
-	}
-      }
-    POP_PRIMITIVE_FRAME (1);
-    stop_history ();
-  Will_Push (STACK_ENV_EXTRA_SLOTS + 1);
-    STACK_PUSH (thunk);
-    PUSH_APPLY_FRAME_HEADER (0);
-  Pushed ();
-    PRIMITIVE_ABORT (PRIM_APPLY);
-    /*NOTREACHED*/
-    PRIMITIVE_RETURN (UNSPECIFIC);
-  }
+          SCHEME_OBJECT next_rib = history_rib_next (rib);
+          if (next_rib == first_rib)
+            break;
+          rib = next_rib;
+        }
+      /* This maintains the mark in (history_register [HIST_RIB]). */
+      set_history_rib (history, OBJECT_NEW_DATUM (first_rib, rib));
+    }
+  POP_PRIMITIVE_FRAME (1);
+  stop_history (tctx);
+  sstack_t* s = tctx_stack (tctx);
+  stack_check (STACK_ENV_EXTRA_SLOTS + 1, s);
+  stack_push (thunk, s);
+  stack_push (make_apply_frame_header (1), s);
+  PRIMITIVE_ABORT (PRIM_APPLY);
+  /*NOTREACHED*/
+  PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 DEFINE_PRIMITIVE ("GET-FIXED-OBJECTS-VECTOR",
