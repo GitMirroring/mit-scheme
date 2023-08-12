@@ -33,15 +33,6 @@ USA.
 #include "object.h"
 #include "stack.h"
 
-typedef enum
-{
-  INT_ACTION_APPLY_CONT,
-  INT_ACTION_APPLY_PROC,
-  INT_ACTION_EVAL,
-  INT_ACTION_RETURN_FROM_COMPILED_CODE,
-  INT_ACTION_DONE
-} int_action_t;
-
 static inline void
 stack_check (unsigned long n, sstack_t* s)
 {
@@ -51,14 +42,6 @@ stack_check (unsigned long n, sstack_t* s)
         stack_death ("stack_check");
       REQUEST_INTERRUPT (INT_Stack_Overflow);
     }
-}
-
-static inline int_action_t
-single_val (SCHEME_OBJECT val, tctx_t* tctx)
-{
-  reset_vals (tctx);
-  add_val (val, tctx);
-  return INT_ACTION_APPLY_CONT;
 }
 
 static inline void
@@ -151,6 +134,5 @@ apply_frame_n_args (sstack_t* s)
 }
 
 extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
-extern void primitive_apply_internal (SCHEME_OBJECT, tctx_t*);
 
 #endif /* not SCM_INTERP_H */

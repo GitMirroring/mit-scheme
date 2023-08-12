@@ -157,7 +157,7 @@ USA.
 
 #define env_header memory_ref_0
 #define env_proc memory_ref_1
-#define set_env_extension memory_ref_1
+#define set_env_extension memory_set_1
 #define env_vals memory_loc_2
 
 #define STACK_ENV_EXTRA_SLOTS   1
@@ -200,39 +200,41 @@ env_val_cell (SCHEME_OBJECT env, unsigned long index)
    so that the "compiled" lookup code does not have to check whether
    the frame has been extended or not.
 
-   Note that for the code to work, ENV_EXTENSION_PARENT_FRAME must be
-   equal to PROCEDURE_ENVIRONMENT.
+   Note that for the code to work, frame_extension_parent must be
+   equal to procedure_environment.
 
    The following constants are implicitely hard-coded in lookup.c,
    where a new extension object is consed in extend_frame.
  */
 
 #define FRAME_EXTENSION_P VECTOR_P
-#define env_extension_parent vector_ref_0
-#define set_env_extension_parent vector_set_0
-#define env_extension_proc vector_ref_1
-#define set_env_extension_proc vector_set_1
+#define frame_extension_parent vector_ref_0
+#define set_frame_extension_parent vector_set_0
+#define frame_extension_proc vector_ref_1
+#define set_frame_extension_proc vector_set_1
+
+#define FRAME_EXTENSION_MIN_SIZE 4
 
 static inline unsigned long
-env_extension_length (SCHEME_OBJECT ext)
+frame_extension_length (SCHEME_OBJECT ext)
 {
   return FIXNUM_TO_ULONG (VECTOR_REF (ext, 2));
 }
 
 static inline void
-set_env_extension_length (SCHEME_OBJECT ext, unsigned long n)
+set_frame_extension_length (SCHEME_OBJECT ext, unsigned long n)
 {
   VECTOR_SET (ext, 2, ULONG_TO_FIXNUM (n));
 }
 
 static inline unsigned long
-env_extension_max_length (SCHEME_OBJECT ext)
+frame_extension_max_length (SCHEME_OBJECT ext)
 {
   return VECTOR_LENGTH (ext) - 3;
 }
 
 static inline SCHEME_OBJECT*
-env_extension_bindings (SCHEME_OBJECT ext)
+frame_extension_bindings (SCHEME_OBJECT ext)
 {
   return VECTOR_LOC (ext, 3);
 }
@@ -246,31 +248,31 @@ extended_frame_p (SCHEME_OBJECT frame)
 static inline SCHEME_OBJECT
 extended_frame_proc (SCHEME_OBJECT frame)
 {
-  return env_extension_proc (env_proc (frame));
+  return frame_extension_proc (env_proc (frame));
 }
 
 static inline SCHEME_OBJECT*
 extended_frame_bindings (SCHEME_OBJECT frame)
 {
-  return env_extension_bindings (env_proc (frame));
+  return frame_extension_bindings (env_proc (frame));
 }
 
 static inline unsigned long
 extended_frame_length (SCHEME_OBJECT frame)
 {
-  return env_extension_length (env_proc (frame));
+  return frame_extension_length (env_proc (frame));
 }
 
 static inline unsigned long
 extended_frame_max_length (SCHEME_OBJECT frame)
 {
-  return env_extension_max_length (env_proc (frame));
+  return frame_extension_max_length (env_proc (frame));
 }
 
 static inline void
 set_extended_frame_length (SCHEME_OBJECT frame, unsigned long n)
 {
-  return set_env_extension_length (env_proc (frame), n);
+  return set_frame_extension_length (env_proc (frame), n);
 }
 
 /* EXTENDED_FIXNUM

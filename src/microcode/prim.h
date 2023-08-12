@@ -31,15 +31,17 @@ USA.
  */
 
 #ifndef SCM_PRIM_H
-#define SCM_PRIM_H
+#define SCM_PRIM_H 1
 
-typedef SCHEME_OBJECT (*primitive_procedure_t) (void);
+#include "tcontext.h"
 
-extern primitive_procedure_t * Primitive_Procedure_Table;
-extern int * Primitive_Arity_Table;
-extern int * Primitive_Count_Table;
-extern const char ** Primitive_Name_Table;
-extern const char ** Primitive_Documentation_Table;
+typedef SCHEME_OBJECT (*primitive_procedure_t) (tctx_t*);
+
+extern primitive_procedure_t* Primitive_Procedure_Table;
+extern int* Primitive_Arity_Table;
+extern int* Primitive_Count_Table;
+extern const char** Primitive_Name_Table;
+extern const char** Primitive_Documentation_Table;
 extern unsigned long MAX_PRIMITIVE;
 
 extern SCHEME_OBJECT declare_primitive
@@ -48,7 +50,7 @@ extern SCHEME_OBJECT declare_primitive
 extern SCHEME_OBJECT install_primitive
   (const char *, primitive_procedure_t, int, int, const char *);
 
-extern SCHEME_OBJECT Prim_unimplemented (void);
+extern SCHEME_OBJECT Prim_unimplemented (tctx_t*);
 
 #define PRIMITIVE_NUMBER(primitive) (OBJECT_DATUM (primitive))
 

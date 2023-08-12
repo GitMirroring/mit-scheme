@@ -960,48 +960,6 @@ copy_history (SCHEME_OBJECT hist_obj)
   return (new_hunk);
 }
 
-/* If a "debugging" version of the interpreter is made, then this
-   procedure is called to actually invoke a primitive.  When a
-   "production" version is made, all of the consistency checks are
-   omitted and a macro from "interp.h" is used to directly code the
-   call to the primitive function. */
-
-void
-primitive_apply_internal (SCHEME_OBJECT primitive, tctx_t* tctx)
-{
-#ifdef ENABLE_DEBUGGING_TOOLS
-  if (Primitive_Debug)
-    Print_Primitive (primitive, tctx);
-#endif
-  interpreter_state_t* state = interpreter_state (tctx);
-  void* position = state->dstack_position;
-  set_primitive (primitive, tctx);
-  set_primitive_free (Free, tctx);
-  reset_vals (tctx);
-  SCHEME_OBJECT val
-    = (*(Primitive_Procedure_Table[PRIMITIVE_NUMBER (primitive)])) (tctx);
-  /* If the primitive failed to unwind the dynamic stack, lose. */
-  if (position != state->dstack_position)
-    {
-      outf_fatal ("\nPrimitive slipped the dynamic stack: %s\n",
-		  (PRIMITIVE_NAME (primitive)));
-      Microcode_Termination (TERM_EXIT);
-    }
-  set_primitive (SHARP_F, tctx);
-  set_primitive_free (0, tctx);
-#ifdef ENABLE_DEBUGGING_TOOLS
-  if (Primitive_Debug)
-    {
-      Print_Expression (val, "Primitive Result");
-      outf_error("\n");
-      outf_flush_error();
-    }
-#endif
-  return single_val (val, tctx);
-}
-
- /* ENABLE_DEBUGGING_TOOLS */
-
 #ifdef ENABLE_PRIMITIVE_PROFILING
 
 /* The profiling mechanism is enabled by storing a vector in the fixed

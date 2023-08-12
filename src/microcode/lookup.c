@@ -482,12 +482,12 @@ define_variable (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
      any references to the other binding, because some of them might
      now refer to the new binding instead.  */
   {
-    SCHEME_OBJECT * shadowed_cell
-      = (find_binding_cell ((GET_FRAME_PARENT (environment)), symbol, 0));
+    SCHEME_OBJECT* shadowed_cell
+      = find_binding_cell (env_parent (environment), symbol, 0);
     SCHEME_OBJECT old_cache
-      = (((shadowed_cell != 0)
-	  && ((get_trap_kind (*shadowed_cell)) == TRAP_COMPILER_CACHED))
-	 ? (GET_TRAP_CACHE (*shadowed_cell))
+      = ((shadowed_cell != 0
+	  && (get_trap_kind (*shadowed_cell) == TRAP_COMPILER_CACHED))
+	 ? GET_TRAP_CACHE (*shadowed_cell)
 	 : SHARP_F);
 
     /* Make sure there is enough space available to move any
@@ -509,37 +509,37 @@ define_variable (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
   }
 }
 
-static SCHEME_OBJECT *
+static SCHEME_OBJECT*
 extend_environment (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
 		    SCHEME_OBJECT value)
 {
   SCHEME_OBJECT pair = (cons (symbol, (MAP_TO_UNASSIGNED (value))));
-  unsigned long length = (GET_EXTENDED_FRAME_LENGTH (environment));
-  ((GET_EXTENDED_FRAME_BINDINGS (environment)) [length]) = pair;
-  SET_EXTENDED_FRAME_LENGTH (environment, (length + 1));
-  return (PAIR_CDR_LOC (pair));
+  unsigned long length = extended_frame_length (environment);
+  extended_frame_bindings (environment) [length] = pair;
+  set_extended_frame_length (environment, length + 1);
+  return PAIR_CDR_LOC (pair);
 }
 
 static long
 guarantee_extension_space (SCHEME_OBJECT environment)
 {
-  if (EXTENDED_FRAME_P (environment))
+  if (extended_frame_p (environment))
     /* Guarantee that there is room in the extension for a binding.  */
     {
-      unsigned long length = (GET_EXTENDED_FRAME_LENGTH (environment));
-      if (length == (GET_MAX_EXTENDED_FRAME_LENGTH (environment)))
+      unsigned long length = extended_frame_length (environment);
+      if (length == extended_frame_max_length (environment))
 	{
 	  SCHEME_OBJECT extension;
 	  RETURN_IF_ERROR
 	    (allocate_frame_extension
 	     ((2 * length),
-	      (GET_EXTENDED_FRAME_PROCEDURE (environment)),
+	      extended_frame_proc (environment),
 	      (&extension)));
-	  memcpy ((GET_FRAME_EXTENSION_BINDINGS (extension)),
-		  (GET_EXTENDED_FRAME_BINDINGS (environment)),
+	  memcpy (frame_extension_bindings (extension),
+		  extended_frame_bindings (environment),
 		  (length * (sizeof (SCHEME_OBJECT))));
-	  SET_FRAME_EXTENSION_LENGTH (extension, length);
-	  SET_FRAME_EXTENSION (environment, extension);
+	  set_frame_extension_length (extension, length);
+	  set_env_extension (environment, extension);
 	}
     }
   else
@@ -547,10 +547,8 @@ guarantee_extension_space (SCHEME_OBJECT environment)
     {
       SCHEME_OBJECT extension;
       RETURN_IF_ERROR
-	(allocate_frame_extension (16,
-				   (GET_FRAME_PROCEDURE (environment)),
-				   (&extension)));
-      SET_FRAME_EXTENSION (environment, extension);
+	(allocate_frame_extension (16, env_proc (environment), (&extension)));
+      set_env_extension (environment, extension);
     }
   return (PRIM_DONE);
 }
@@ -559,14 +557,13 @@ static long
 allocate_frame_extension (unsigned long length, SCHEME_OBJECT procedure,
 			  SCHEME_OBJECT * extension_ret)
 {
-  unsigned long n_words = (ENV_EXTENSION_MIN_SIZE + length);
+  unsigned long n_words = FRAME_EXTENSION_MIN_SIZE + length;
   GC_CHECK (n_words);
   {
     SCHEME_OBJECT extension = (make_vector ((n_words - 1), SHARP_F, 0));
-    SET_FRAME_EXTENSION_PARENT_FRAME
-      (extension, (GET_PROCEDURE_ENVIRONMENT (procedure)));
-    SET_FRAME_EXTENSION_PROCEDURE (extension, procedure);
-    SET_FRAME_EXTENSION_LENGTH (extension, 0);
+    set_frame_extension_parent (extension, procedure_environment (procedure));
+    set_frame_extension_proc (extension, procedure);
+    set_frame_extension_length (extension, 0);
     (*extension_ret) = extension;
     return (PRIM_DONE);
   }
@@ -721,38 +718,40 @@ unbind_variable (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
 }
 
 static long
-unbind_cached_variable (SCHEME_OBJECT * cell, SCHEME_OBJECT frame,
-			SCHEME_OBJECT symbol)
+unbind_cached_variable (SCHEME_OBJECT* cell, SCHEME_OBJECT env,
+			SCHEME_OBJECT name)
 {
   SCHEME_OBJECT cache = (GET_TRAP_CACHE (*cell));
-  SCHEME_OBJECT * shadowed_cell
-    = (find_binding_cell ((GET_FRAME_PARENT (frame)), symbol, 0));
-  GC_CHECK (update_cache_refs_space (cache, frame, symbol));
-  unbind_variable_1 (cell, frame, symbol);
-  return (update_cache_references (cache, shadowed_cell, frame, symbol));
+  SCHEME_OBJECT* shadowed_cell = find_binding_cell (env_parent (env), name, 0);
+  GC_CHECK (update_cache_refs_space (cache, env, name));
+  unbind_variable_1 (cell, env, name);
+  return update_cache_references (cache, shadowed_cell, env, name);
 }
 
 static void
-unbind_variable_1 (SCHEME_OBJECT * cell,
-		   SCHEME_OBJECT frame, SCHEME_OBJECT symbol)
+unbind_variable_1 (SCHEME_OBJECT* cell, SCHEME_OBJECT env, SCHEME_OBJECT name)
 {
-  if ((PROCEDURE_FRAME_P (frame)) && (EXTENDED_FRAME_P (frame)))
+  if (PROCEDURE_FRAME_P (env) && extended_frame_p (env))
     {
-      SCHEME_OBJECT * start = (GET_EXTENDED_FRAME_BINDINGS (frame));
-      unsigned long length = (GET_EXTENDED_FRAME_LENGTH (frame));
-      unsigned long index = 0;
-      while (index < length)
-	{
-	  if ((PAIR_CAR (start[index])) == symbol)
-	    {
-	      if (index < (length - 1))
-		(start[index]) = (start [length - 1]);
-	      SET_EXTENDED_FRAME_LENGTH (frame, (length - 1));
-	      (start [length - 1]) = SHARP_F;
-	      return;
-	    }
-	  index += 1;
-	}
+      SCHEME_OBJECT* start = extended_frame_bindings (env);
+      unsigned long length = extended_frame_length (env);
+      if (length > 0)
+        {
+          unsigned long index = 0;
+          while (index < length)
+            {
+              if (PAIR_CAR (start[index]) == name)
+                {
+                  unsigned long last = length - 1;
+                  if (index < last)
+                    start[index] = start[last];
+                  set_extended_frame_length (env, last);
+                  start[last] = SHARP_F;
+                  return;
+                }
+              index += 1;
+            }
+        }
     }
   (*cell) = UNBOUND_OBJECT;
 }
@@ -1192,7 +1191,7 @@ move_ref_pair_p (SCHEME_OBJECT ref_pair, SCHEME_OBJECT ancestor)
     {
       if (descendant == ancestor)
 	return (1);
-      descendant = (GET_FRAME_PARENT (descendant));
+      descendant = env_parent (descendant);
     }
   return (descendant == ancestor);
 }
@@ -1201,9 +1200,9 @@ move_ref_pair_p (SCHEME_OBJECT ref_pair, SCHEME_OBJECT ancestor)
 
 /***** Utilities *****/
 
-static SCHEME_OBJECT *
+static SCHEME_OBJECT*
 find_binding_cell (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
-		   SCHEME_OBJECT * frame_ret)
+		   SCHEME_OBJECT* frame_ret)
 {
   if (NULL_FRAME_P (environment))
     {
@@ -1213,33 +1212,33 @@ find_binding_cell (SCHEME_OBJECT environment, SCHEME_OBJECT symbol,
     }
   assert (ENVIRONMENT_P (environment));
   SCHEME_OBJECT frame = environment;
-  while (1)
+  while (true)
     {
-      SCHEME_OBJECT * cell = (scan_frame (frame, symbol, 0));
+      SCHEME_OBJECT* cell = (scan_frame (frame, symbol, 0));
       if ((cell != 0)
 	  /* This is safe because if 'frame' was the global frame then
 	     'cell' would be non-null.  Therefore 'frame' must be a
 	     procedure frame.  */
-	  || (!ENVIRONMENT_P (GET_FRAME_PARENT (frame))))
+	  || (!ENVIRONMENT_P (env_parent (frame))))
 	{
 	  if (frame_ret != 0)
 	    (*frame_ret) = frame;
 	  return (cell);
 	}
-      frame = (GET_FRAME_PARENT (frame));
+      frame = env_parent (frame);
     }
 }
 
-static SCHEME_OBJECT *
+static SCHEME_OBJECT*
 scan_frame (SCHEME_OBJECT frame, SCHEME_OBJECT symbol, int find_unbound_p)
 {
   if (PROCEDURE_FRAME_P (frame))
     {
-      if (EXTENDED_FRAME_P (frame))
+      if (extended_frame_p (frame))
 	{
 	  /* Search for a binding in the extension. */
-	  SCHEME_OBJECT * scan = (GET_EXTENDED_FRAME_BINDINGS (frame));
-	  SCHEME_OBJECT * end = (scan + (GET_EXTENDED_FRAME_LENGTH (frame)));
+	  SCHEME_OBJECT* scan = extended_frame_bindings (frame);
+	  SCHEME_OBJECT* end = (scan + extended_frame_length (frame));
 	  while (scan < end)
 	    {
 	      if ((PAIR_CAR (*scan)) == symbol)
@@ -1247,11 +1246,11 @@ scan_frame (SCHEME_OBJECT frame, SCHEME_OBJECT symbol, int find_unbound_p)
 	      scan += 1;
 	    }
 	  return
-	    (scan_procedure_bindings ((GET_EXTENDED_FRAME_PROCEDURE (frame)),
+	    (scan_procedure_bindings (extended_frame_proc (frame),
 				      frame, symbol, find_unbound_p));
 	}
       return
-	(scan_procedure_bindings ((GET_FRAME_PROCEDURE (frame)),
+	(scan_procedure_bindings ((env_proc (frame)),
 				  frame, symbol, find_unbound_p));
     }
   assert (GLOBAL_FRAME_P (frame));
@@ -1259,19 +1258,19 @@ scan_frame (SCHEME_OBJECT frame, SCHEME_OBJECT symbol, int find_unbound_p)
 }
 
 static SCHEME_OBJECT *
-scan_procedure_bindings (SCHEME_OBJECT procedure, SCHEME_OBJECT frame,
-			 SCHEME_OBJECT symbol, int find_unbound_p)
+scan_procedure_bindings (SCHEME_OBJECT proc, SCHEME_OBJECT env,
+			 SCHEME_OBJECT name, int find_unbound_p)
 {
-  SCHEME_OBJECT lambda = (GET_PROCEDURE_LAMBDA (procedure));
-  SCHEME_OBJECT * start = (GET_LAMBDA_PARAMETERS (lambda));
-  SCHEME_OBJECT * scan = start;
-  SCHEME_OBJECT * end = (scan + (GET_LAMBDA_N_PARAMETERS (lambda)));
+  SCHEME_OBJECT lambda = procedure_lambda (proc);
+  SCHEME_OBJECT* start = lambda_params (lambda);
+  SCHEME_OBJECT* end = start + lambda_n_params (lambda);
+  SCHEME_OBJECT* scan = start;
   while (scan < end)
     {
-      if ((*scan) == symbol)
+      if ((*scan) == name)
 	{
-	  SCHEME_OBJECT * cell = (GET_FRAME_ARG_CELL (frame, (scan - start)));
-	  if (find_unbound_p || ((*cell) != UNBOUND_OBJECT))
+	  SCHEME_OBJECT* cell = env_vals (env) + (scan - start);
+	  if (find_unbound_p || (*cell) != UNBOUND_OBJECT)
 	    return (cell);
 	}
       scan += 1;
