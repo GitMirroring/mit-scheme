@@ -300,7 +300,7 @@ Evaluate SCODE-EXPRESSION in ENVIRONMENT.")
   SCHEME_OBJECT exp = (ARG_REF (1));
   SCHEME_OBJECT env = (ARG_REF (2));
   POP_PRIMITIVE_FRAME (2);
-  PRIMITIVE_REDUCE (exp, env);
+  primitive_reduce (exp, env, tctx);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
@@ -326,9 +326,7 @@ memoized yet.")
       push_cont_rc (RC_SNAP_NEED_THUNK, thunk, s);
       stack_push (thunk_value (thunk), s);
       stack_push (make_apply_frame_header (1), s);
-      PRIMITIVE_ABORT (PRIM_APPLY);
-      /*NOTREACHED*/
-      PRIMITIVE_RETURN (UNSPECIFIC);
+      abort_to_interpreter (PRIM_APPLY, tctx);
     }
   else
     {
@@ -337,10 +335,11 @@ memoized yet.")
       POP_PRIMITIVE_FRAME (1);
       stack_check (CONTINUATION_SIZE, s);
       push_cont_rc (RC_SNAP_NEED_THUNK, thunk, s);
-      PRIMITIVE_REDUCE (thunk_procedure (thunk), thunk_environment (thunk));
-      /*NOTREACHED*/
-      PRIMITIVE_RETURN (UNSPECIFIC);
+      primitive_reduce
+        (thunk_procedure (thunk), thunk_environment (thunk), tctx);
     }
+  /*NOTREACHED*/
+  PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 /* Interrupts */
@@ -439,7 +438,7 @@ identified by the continuation parser.")
   sstack_t* s = tctx_stack (tctx);
   unsigned long nargs = primitive_lexpr_actuals (tctx);
   if (nargs < 2)
-    signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+    signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS, tctx);
   SCHEME_OBJECT thunk = (stack_pop (s));
   stack_push (make_apply_frame_header (nargs - 1), s);
   push_cont_env (RC_INTERNAL_APPLY, SHARP_F, THE_NULL_ENV, s);

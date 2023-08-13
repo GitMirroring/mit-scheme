@@ -45,7 +45,7 @@ typedef struct interpreter_state_s
 // Per-thread context
 typedef struct
 {
-  sstack_t stack;
+  sstack_t* stack;
 
   SCHEME_OBJECT value_store[64];
   SCHEME_OBJECT* value_pointer;
@@ -65,7 +65,7 @@ typedef struct
 static inline sstack_t*
 tctx_stack (tctx_t* c)
 {
-  return &c->stack;
+  return c->stack;
 }
 
 static inline unsigned int

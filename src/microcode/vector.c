@@ -66,7 +66,7 @@ allocate_non_marked_vector (unsigned int type,
 			    bool gc_check_p)
 {
   if (gc_check_p)
-    Primitive_GC_If_Needed (1 + length);
+    primitive_gc_if_needed (1 + length, current_tctx ());
   return (allocate_vector (type, TC_MANIFEST_NM_VECTOR, length, (&Free)));
 }
 
@@ -76,7 +76,7 @@ allocate_marked_vector (unsigned int type,
 			bool gc_check_p)
 {
   if (gc_check_p)
-    Primitive_GC_If_Needed (1 + length);
+    primitive_gc_if_needed (1 + length, current_tctx ());
   return (allocate_vector (type, TC_MANIFEST_VECTOR, length, (&Free)));
 }
 
@@ -87,7 +87,7 @@ make_marked_vector (unsigned int type,
 		    bool gc_check_p)
 {
   if (gc_check_p)
-    Primitive_GC_If_Needed (length + 1);
+    primitive_gc_if_needed (length + 1, current_tctx ());
   SCHEME_OBJECT result = (MAKE_POINTER_OBJECT (type, Free));
   (*Free++) = (MAKE_OBJECT (TC_MANIFEST_VECTOR, length));
   while ((length--) > 0)
@@ -265,7 +265,7 @@ subvector_to_list (SCHEME_OBJECT vector, long start, long end)
   SCHEME_OBJECT *pair_scan;
   if (start == end)
     return (EMPTY_LIST);
-  Primitive_GC_If_Needed (2 * (end - start));
+  primitive_gc_if_needed (2 * (end - start), current_tctx ());
   result = (MAKE_POINTER_OBJECT (TC_LIST, Free));
   scan = (VECTOR_LOC (vector, start));
   end_scan = (VECTOR_LOC (vector, (end - 1)));
@@ -300,7 +300,7 @@ list_to_vector (unsigned long result_type, long argument_number)
   result = (Free++);
   while (PAIR_P (list))
     {
-      Primitive_GC_If_Needed (0);
+      primitive_gc_if_needed (0, current_tctx ());
       count += 1;
       (*Free++) = (PAIR_CAR (list));
       list = (PAIR_CDR (list));

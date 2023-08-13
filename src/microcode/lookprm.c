@@ -33,17 +33,17 @@ USA.
 #include "trap.h"
 #include "lookup.h"
 
-#define STD_LOOKUP(expression)						\
-{									\
-  long SL_result = (expression);					\
-  if (SL_result != PRIM_DONE)						\
-    {									\
-      if (SL_result == PRIM_INTERRUPT)					\
-	signal_interrupt_from_primitive ();				\
-      else								\
-	signal_error_from_primitive (SL_result);			\
-    }									\
-}
+#define STD_LOOKUP(expression) do                                       \
+{                                                                       \
+  long SL_result = (expression);                                        \
+  if (SL_result != PRIM_DONE)                                           \
+    {                                                                   \
+      if (SL_result == PRIM_INTERRUPT)                                  \
+	signal_interrupt_from_primitive (tctx);                         \
+      else                                                              \
+	signal_error_from_primitive (SL_result, tctx);                  \
+    }                                                                   \
+} while (true)
 
 DEFINE_PRIMITIVE ("LEXICAL-REFERENCE", Prim_lexical_reference, 2, 2,
 		  "(ENVIRONMENT SYMBOL)\n\
@@ -139,10 +139,10 @@ binding of SYMBOL within ENVIRONMENT.  The following values are defined:\n\
       case ERR_MACRO_BINDING:
 	PRIMITIVE_RETURN (LONG_TO_UNSIGNED_FIXNUM (3));
       case PRIM_INTERRUPT:
-	signal_interrupt_from_primitive ();
+	signal_interrupt_from_primitive (tctx);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       default:
-	signal_error_from_primitive (result);
+	signal_error_from_primitive (result, tctx);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       }
   }
@@ -169,10 +169,10 @@ If the variable is unassigned or holds a macro transformer,\n\
       case ERR_UNASSIGNED_VARIABLE:
 	PRIMITIVE_RETURN (UNASSIGNED_OBJECT);
       case PRIM_INTERRUPT:
-	signal_interrupt_from_primitive ();
+	signal_interrupt_from_primitive (tctx);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       default:
-	signal_error_from_primitive (result);
+	signal_error_from_primitive (result, tctx);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       }
   }

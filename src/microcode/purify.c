@@ -31,7 +31,7 @@ USA.
 #include "prims.h"
 #include "gccode.h"
 
-static void purify (SCHEME_OBJECT);
+static void purify (SCHEME_OBJECT, tctx_t*);
 
 /* Purify increases the size of constant space at the expense of the
    heap.  A GC-like relocation is performed with the object being
@@ -44,40 +44,36 @@ DEFINE_PRIMITIVE ("PRIMITIVE-PURIFY", Prim_primitive_purify, 3, 3,
 Copy OBJECT from the heap into constant/pure space.\n\
 PURE? is ignored.")
 {
-  SCHEME_OBJECT object;
-  unsigned long safety_margin;
-  SCHEME_OBJECT daemon;
   PRIMITIVE_HEADER (3);
+  sstack_t* s = tctx_stack (tctx);
 
-  canonicalize_primitive_context ();
-  STACK_CHECK_FATAL ("PURIFY");
+  canonicalize_primitive_context (tctx);
+  if (stack_overwritten_p (s))
+    stack_death ("PURIFY");
 
-  object = (ARG_REF (1));
-  safety_margin = (ARG_HEAP_RESERVED (3));
+  SCHEME_OBJECT object = (ARG_REF (1));
+  unsigned long safety_margin = (ARG_HEAP_RESERVED (3));
   POP_PRIMITIVE_FRAME (3);
 
   ENTER_CRITICAL_SECTION ("purify");
   heap_reserved = safety_margin;
-  purify (object);
+  purify (object, tctx);
 
- Will_Push (CONTINUATION_SIZE);
-  SET_RC (RC_NORMAL_GC_DONE);
-  SET_EXP
-    (cons (SHARP_T,
-	   (ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
-			     ? (HEAP_AVAILABLE - gc_space_needed)
-			     : 0))));
-  SAVE_CONT ();
- Pushed ();
+  stack_push (CONTINUATION_SIZE, s);
+  push_cont_rc (RC_NORMAL_GC_DONE,
+                (cons (SHARP_T,
+                       (ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
+                                         ? HEAP_AVAILABLE - gc_space_needed
+                                         : 0)))),
+                s);
 
   RENAME_CRITICAL_SECTION ("purify daemon");
-  daemon = (VECTOR_REF (fixed_objects, GC_DAEMON));
+  SCHEME_OBJECT daemon = VECTOR_REF (fixed_objects, GC_DAEMON);
   if (daemon != SHARP_F)
     {
-     Will_Push (2);
-      STACK_PUSH (daemon);
-      PUSH_APPLY_FRAME_HEADER (0);
-     Pushed ();
+      stack_check (2, s);
+      stack_push (daemon, s);
+      stack_push (make_apply_frame_header (1), s);
       PRIMITIVE_ABORT (PRIM_APPLY);
     }
   PRIMITIVE_ABORT (PRIM_POP_RETURN);
@@ -86,34 +82,32 @@ PURE? is ignored.")
 }
 
 static void
-purify (SCHEME_OBJECT object)
+purify (SCHEME_OBJECT object, tctx_t* tctx)
 {
-  SCHEME_OBJECT * start_copy;
-  SCHEME_OBJECT * new_constant_alloc_next;
-  SCHEME_OBJECT * heap_copy_start;
-
-  STACK_CHECK_FATAL ("PURIFY");
+  sstack_t* s = tctx_stack (tctx);
+  if (stack_overwritten_p (s))
+    stack_death ("PURIFY");
 
   open_tospace (constant_alloc_next);
   initialize_weak_chain ();
 
-  start_copy = (get_newspace_ptr ());
+  SCHEME_OBJECT* start_copy = get_newspace_ptr ();
   add_to_tospace (object);
 
-  current_gc_table = (std_gc_table ());
+  current_gc_table = std_gc_table ();
   gc_scan_tospace (start_copy, 0);
 
-  new_constant_alloc_next = (get_newspace_ptr ());
+  SCHEME_OBJECT* new_constant_alloc_next = get_newspace_ptr ();
   increment_tospace_ptr (CONSTANT_SPACE_FUDGE);
-  heap_copy_start = (get_newspace_ptr ());
+  SCHEME_OBJECT* heap_copy_start = get_newspace_ptr ();
 
-  std_gc_pt1 ();
+  std_gc_pt1 (tctx);
 
   constant_alloc_next = new_constant_alloc_next;
   constant_end = heap_copy_start;
   heap_start = constant_end;
 
-  std_gc_pt2 ();
+  std_gc_pt2 (tctx);
 
   resize_tospace (heap_end - heap_start);
 }

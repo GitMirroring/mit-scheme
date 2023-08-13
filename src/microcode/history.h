@@ -31,20 +31,20 @@ USA.
    each entry pointing to a "rib".  The rib consists of a singly
    linked ring whose entries contain expressions and environments. */
 
-static inline SCHEME_OBJECT*
+static inline SCHEME_OBJECT
 make_history (SCHEME_OBJECT rib, SCHEME_OBJECT next, SCHEME_OBJECT prev)
 {
-  SCHEME_OBJECT* history = Free;
+  SCHEME_OBJECT history = MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, Free);
   *Free++ = rib;
   *Free++ = next;
   *Free++ = prev;
   return history;
 }
 
-static inline SCHEME_OBJECT*
+static inline SCHEME_OBJECT
 make_history_rib (SCHEME_OBJECT exp, SCHEME_OBJECT env, SCHEME_OBJECT next)
 {
-  SCHEME_OBJECT* rib = Free;
+  SCHEME_OBJECT rib = MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, Free);
   *Free++ = exp;
   *Free++ = env;
   *Free++ = next;
@@ -86,20 +86,39 @@ marked_history_p (SCHEME_OBJECT history)
 static inline void
 mark_history (SCHEME_OBJECT history)
 {
-  memory_set_1 (history, marked_history (memory_ref_1 (history)));
+  set_history_next (history, marked_history (history_next (history)));
+}
+
+static inline void
+unmark_history (SCHEME_OBJECT history)
+{
+  set_history_next (history, unmarked_history (history_next (history)));
+}
+
+static inline bool
+history_marked_p (SCHEME_OBJECT history)
+{
+  return marked_history_p (history_next (history));
 }
 
 static inline void
 mark_history_rib (SCHEME_OBJECT rib)
 {
-  memory_set_2 (rib, marked_history (memory_ref_2 (rib)));
+  set_history_rib_next (rib, marked_history (history_rib_next (rib)));
 }
 
 static inline void
 unmark_history_rib (SCHEME_OBJECT rib)
 {
-  memory_set_2 (rib, unmarked_history (memory_ref_2 (rib)));
+  set_history_rib_next (rib, unmarked_history (history_rib_next (rib)));
 }
+
+static inline bool
+history_rib_marked_p (SCHEME_OBJECT rib)
+{
+  return marked_history_p (history_rib_next (rib));
+}
+
 #define READ_DUMMY_HISTORY() (VECTOR_REF (fixed_objects, DUMMY_HISTORY))
 #define SAVE_HISTORY_LENGTH (CONTINUATION_SIZE + 2)
 

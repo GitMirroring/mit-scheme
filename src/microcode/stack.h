@@ -46,10 +46,22 @@ stack_start (sstack_t* s)
   return s->start;
 }
 
+static inline void
+set_stack_start (SCHEME_OBJECT* sp, sstack_t* s)
+{
+  s->start = sp;
+}
+
 static inline SCHEME_OBJECT*
 stack_end (sstack_t* s)
 {
   return s->end;
+}
+
+static inline void
+set_stack_end (SCHEME_OBJECT* sp, sstack_t* s)
+{
+  s->end = sp;
 }
 
 static inline SCHEME_OBJECT*
@@ -138,14 +150,6 @@ stack_overwritten_p (sstack_t* s)
 
 #define SP_TO_N_PUSHED(sp, start, end) ((end) - (sp))
 #define N_PUSHED_TO_SP(np, start, end) ((end) - (np))
-
-#if 0
-#define STACK_CHECK_FATAL(s) do						\
-{									\
-  if (STACK_OVERFLOWED_P ())						\
-    stack_death (s);							\
-} while (false)
-#endif
 
 // #define INITIALIZE_STACK() (stack_reset (get_tctx ()))
 

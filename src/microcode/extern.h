@@ -319,7 +319,7 @@ extern void canonicalize_primitive_context (tctx_t*);
 extern void back_out_of_primitive (tctx_t*);
 
 extern void Interpret (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
-extern void Do_Micro_Error (long, bool);
+extern void Do_Micro_Error (long, bool, tctx_t*);
 extern void Stack_Death (tctx_t*) NORETURN;
 extern SCHEME_OBJECT * control_point_start (SCHEME_OBJECT);
 extern SCHEME_OBJECT * control_point_end (SCHEME_OBJECT);

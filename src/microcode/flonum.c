@@ -74,7 +74,7 @@ SCHEME_OBJECT
 double_to_flonum (double value)
 {
   ALIGN_FLOAT (Free);
-  Primitive_GC_If_Needed (FLONUM_SIZE + 1);
+  primitive_gc_if_needed (FLONUM_SIZE + 1, current_tctx ());
   {
     SCHEME_OBJECT result = (MAKE_POINTER_OBJECT (TC_BIG_FLONUM, Free));
     (*Free++) = (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, FLONUM_SIZE));
@@ -88,7 +88,7 @@ SCHEME_OBJECT
 binary64_to_flonum (uint64_t value)
 {
   ALIGN_FLOAT (Free);
-  Primitive_GC_If_Needed (FLONUM_SIZE + 1);
+  primitive_gc_if_needed (FLONUM_SIZE + 1, current_tctx ());
   {
     SCHEME_OBJECT result = (MAKE_POINTER_OBJECT (TC_BIG_FLONUM, Free));
     (*Free++) = (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, FLONUM_SIZE));

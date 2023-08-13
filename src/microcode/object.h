@@ -29,7 +29,7 @@ USA.
    objects.  This is the lowest level of abstraction in this program.
 */
 #ifndef SCM_OBJECT_H
-#define SCM_OBJECT_H
+#define SCM_OBJECT_H 1
 
 #include "config.h"
 #include "types.h"

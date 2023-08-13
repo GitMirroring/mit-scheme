@@ -59,12 +59,6 @@ USA.
   gc_space_needed = (n_words);						\
 } while (0)
 
-#define RESET_HEAP_ALLOC_LIMIT() do					\
-{									\
-  heap_alloc_limit = (heap_end - heap_reserved);			\
-  COMPILER_SETUP_INTERRUPT ();						\
-} while (0)
-
 #define ARG_HEAP_RESERVED(n)						\
   (arg_ulong_index_integer ((n), ((heap_end - heap_start) / 2)))
 
@@ -88,8 +82,8 @@ USA.
 extern bool allocations_ok_p (unsigned long, unsigned long, unsigned long);
 extern void reset_allocator_parameters (unsigned long, unsigned long);
 extern bool object_in_heap_p (SCHEME_OBJECT);
-extern void std_gc_pt1 (void);
-extern void std_gc_pt2 (void);
-extern void stack_death (const char *) NORETURN;
+extern void std_gc_pt1 (tctx_t*);
+extern void std_gc_pt2 (tctx_t*);
+extern void stack_death (const char*) NORETURN;
 
 #endif /* SCM_MEMMAG_H */

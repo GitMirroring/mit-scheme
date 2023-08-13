@@ -112,7 +112,7 @@ that was dumped.")
 
   init_fasl_file ((STRING_ARG (1)), false, (&handle));
   if ((FASLHDR_CONSTANT_SIZE (fh)) > 0)
-    signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG);
+    signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG, tctx);
 
   heap_length = (REQUIRED_HEAP (fh));
   if ((FASLHDR_VERSION (fh)) >= FASL_VERSION_EPHEMERONS)
@@ -124,12 +124,12 @@ that was dumped.")
   if (GC_NEEDED_P (heap_length + extra_ephemeron_space))
     {
       if (heap_length == failed_heap_length)
-	signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG);
+	signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG, tctx);
       failed_heap_length = heap_length;
       n_ephemerons_requested = n_ephemerons;
       ephemeron_request_hard_p = false;
       REQUEST_GC (heap_length);
-      signal_interrupt_from_primitive ();
+      signal_interrupt_from_primitive (tctx);
     }
   failed_heap_length = 0;
 
@@ -230,7 +230,7 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
   EXIT_CRITICAL_SECTION ({});
 
   /* Return in a non-standard way. */
-  PRIMITIVE_REDUCE (exp, env);
+  primitive_reduce (exp, env, tctx);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }

@@ -62,7 +62,7 @@ error_process_terminated (void)
 int
 executing_scheme_primitive_p (void)
 {
-  return (PRIMITIVE_P (GET_PRIMITIVE));
+  return PRIMITIVE_P (get_primitive (current_tctx ()));
 }
 
 void
@@ -118,7 +118,7 @@ void
 debug_back_trace (outf_channel stream)
 {
   outf (stream, "*** Scheme Microcode Back Trace: ***\n");
-  Back_Trace (stream);
+  Back_Trace (stream, stack_pointer (current_stack ()));
   outf (stream, "*** End of Back Trace ***\n");
   outf_flush (stream);
 }

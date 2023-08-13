@@ -41,7 +41,7 @@ Returns #t iff OBJECT is a pair")
 SCHEME_OBJECT
 cons (SCHEME_OBJECT car, SCHEME_OBJECT cdr)
 {
-  Primitive_GC_If_Needed (2);
+  primitive_gc_if_needed (2, current_tctx ());
   (*Free++) = car;
   (*Free++) = cdr;
   return (MAKE_POINTER_OBJECT (TC_LIST, (Free - 2)));
@@ -150,7 +150,7 @@ DEFINE_PRIMITIVE ("system-pair?", Prim_sys_pair, 1, 1, 0)
 SCHEME_OBJECT
 system_pair_cons (long type, SCHEME_OBJECT car, SCHEME_OBJECT cdr)
 {
-  Primitive_GC_If_Needed (2);
+  primitive_gc_if_needed (2, current_tctx ());
   (*Free++) = car;
   (*Free++) = cdr;
   return (MAKE_POINTER_OBJECT (type, (Free - 2)));

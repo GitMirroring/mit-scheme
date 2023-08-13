@@ -182,16 +182,17 @@ reset_allocator_parameters (unsigned long n_constant, unsigned long reserved)
 {
   heap_reserved = ((reserved == 0) ? DEFAULT_HEAP_RESERVED : reserved);
   gc_space_needed = 0;
-  SET_STACK_LIMITS (memory_block_start, saved_stack_size);
-  constant_start = (memory_block_start + saved_stack_size);
+  sstack_t* s = default_stack ();
+  set_stack_start (memory_block_start, s);
+  set_stack_end (memory_block_start + saved_stack_size, s);
+  constant_start = memory_block_start + saved_stack_size;
   constant_alloc_next = constant_start;
-  constant_end = (constant_alloc_next + n_constant + CONSTANT_SPACE_FUDGE);
+  constant_end = constant_alloc_next + n_constant + CONSTANT_SPACE_FUDGE;
   heap_start = constant_end;
   Free = heap_start;
   heap_end = memory_block_end;
-
-  RESET_HEAP_ALLOC_LIMIT ();
-  INITIALIZE_STACK ();
+  heap_alloc_limit = heap_end - heap_reserved;
+  stack_reset (s);
 }
 
 static void
@@ -243,17 +244,19 @@ SAFETY-MARGIN, which must be a non-negative integer.  Finally, runs\n\
 the primitive GC daemons before returning.")
 {
   PRIMITIVE_HEADER (1);
-  canonicalize_primitive_context ();
+  canonicalize_primitive_context (tctx);
 
-  STACK_CHECK_FATAL ("GC");
+  sstack_t* s = tctx_stack (tctx);
+  if (stack_overwritten_p (s))
+    stack_death ("GC");
   if (Free > heap_end)
     {
       outf_fatal ("\nGC has been delayed too long!\n");
       outf_fatal
 	("Free = %#lx; heap_alloc_limit = %#lx; heap_end = %#lx\n",
-	 ((unsigned long) Free),
-	 ((unsigned long) heap_alloc_limit),
-	 ((unsigned long) heap_end));
+	 (unsigned long) Free,
+	 (unsigned long) heap_alloc_limit,
+	 (unsigned long) heap_end);
       Microcode_Termination (TERM_NO_SPACE);
     }
 
@@ -267,44 +270,41 @@ the primitive GC daemons before returning.")
   ENTER_CRITICAL_SECTION ("garbage collector");
 
 #ifdef ENABLE_DEBUGGING_TOOLS
-  if (GC_Debug == true) verify_heap ();
+  if (GC_Debug == true) verify_heap (s);
 #endif
 
   open_tospace (heap_start);
   initialize_weak_chain ();
   ephemeron_count = 0;
 
-  std_gc_pt1 ();
-  std_gc_pt2 ();
+  std_gc_pt1 (tctx);
+  std_gc_pt2 (tctx);
 
-  Will_Push (CONTINUATION_SIZE);
-  SET_RC (RC_NORMAL_GC_DONE);
-  SET_EXP (ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
-			    ? (HEAP_AVAILABLE - gc_space_needed)
-			    : 0));
-  SAVE_CONT ();
-  Pushed ();
+  stack_check (CONTINUATION_SIZE, s);
+  push_cont_rc (RC_NORMAL_GC_DONE,
+                ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
+                                 ? (HEAP_AVAILABLE - gc_space_needed)
+                                 : 0),
+                s);
 
   RENAME_CRITICAL_SECTION ("garbage collector daemon");
-  {
-    SCHEME_OBJECT daemon = (VECTOR_REF (fixed_objects, GC_DAEMON));
-    if (daemon == SHARP_F)
-      PRIMITIVE_ABORT (PRIM_POP_RETURN);
 
-    Will_Push (2);
-    STACK_PUSH (daemon);
-    PUSH_APPLY_FRAME_HEADER (0);
-    Pushed ();
-    PRIMITIVE_ABORT (PRIM_APPLY);
-    /*NOTREACHED*/
-  }
+  SCHEME_OBJECT daemon = VECTOR_REF (fixed_objects, GC_DAEMON);
+  if (daemon == SHARP_F)
+    PRIMITIVE_ABORT (PRIM_POP_RETURN);
+
+  stack_check (2, s);
+  stack_push (daemon, s);
+  stack_push (make_apply_frame_header (1), s);
+  PRIMITIVE_ABORT (PRIM_APPLY);
+  /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 static SCHEME_OBJECT * saved_to;
 
 void
-std_gc_pt1 (void)
+std_gc_pt1 (tctx_t* tctx)
 {
 #ifdef ENABLE_GC_DEBUGGING_TOOLS
   initialize_gc_object_references ();
@@ -312,11 +312,11 @@ std_gc_pt1 (void)
 
   saved_to = (get_newspace_ptr ());
   add_to_tospace (fixed_objects);
-  add_to_tospace
-    (MAKE_POINTER_OBJECT (UNMARKED_HISTORY_TYPE, history_register));
+  add_to_tospace (get_history (tctx));
 
   current_gc_table = (std_gc_table ());
-  gc_scan_oldspace (stack_pointer, stack_end);
+  sstack_t* s = tctx_stack (tctx);
+  gc_scan_oldspace (stack_pointer (s), stack_end (s));
   gc_scan_oldspace (constant_start, constant_alloc_next);
   gc_scan_tospace (saved_to, 0);
 
@@ -327,26 +327,26 @@ std_gc_pt1 (void)
 }
 
 void
-std_gc_pt2 (void)
+std_gc_pt2 (tctx_t* tctx)
 {
-  SCHEME_OBJECT * p = (get_newspace_ptr ());
+  SCHEME_OBJECT* p = get_newspace_ptr ();
   (void) save_tospace (save_tospace_copy, 0);
   Free = p;
 
   fixed_objects = (*saved_to++);
-  history_register = (OBJECT_ADDRESS (*saved_to++));
+  set_history (*saved_to++, tctx);
   saved_to = 0;
 
   {
     unsigned long length
-      = (compute_ephemeron_array_length
-	 (ephemeron_count + n_ephemerons_requested));
+      = compute_ephemeron_array_length
+	  (ephemeron_count + n_ephemerons_requested);
     if (!HEAP_AVAILABLE_P
 	((VECTOR_DATA + length) + (n_ephemerons_requested * EPHEMERON_SIZE)))
       {
 	if (ephemeron_request_hard_p)
-	  gc_space_needed += (VECTOR_DATA + length);
-	length = (compute_ephemeron_array_length (ephemeron_count));
+	  gc_space_needed += VECTOR_DATA + length;
+	length = compute_ephemeron_array_length (ephemeron_count);
 #ifdef ENABLE_GC_DEBUGGING_TOOLS
 	/* This should never trigger, because we discard the previous
 	   ephemeron array, which always has room for at least as many
@@ -355,7 +355,7 @@ std_gc_pt2 (void)
 	  std_gc_death ("No room for ephemeron array");
 #endif
       }
-    ephemeron_array = (make_vector (length, SHARP_F, false));
+    ephemeron_array = make_vector (length, SHARP_F, false);
     n_ephemerons_requested = 0;
     ephemeron_request_hard_p = false;
   }
@@ -374,7 +374,7 @@ save_tospace_copy (SCHEME_OBJECT * start, SCHEME_OBJECT * end, void * p)
 }
 
 void
-stack_death (const char * name)
+stack_death (const char* name)
 {
   outf_fatal
     ("\n%s: The stack has overflowed and overwritten adjacent memory.\n",
@@ -472,7 +472,7 @@ gc_if_needed_for_ephemeron (unsigned long extra_space)
     {
       n_ephemerons_requested = 1;
       ephemeron_request_hard_p = true;
-      Primitive_GC (EPHEMERON_SIZE);
+      primitive_gc (EPHEMERON_SIZE, current_tctx ());
     }
 }
 

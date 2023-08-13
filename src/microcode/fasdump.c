@@ -388,7 +388,7 @@ DEFINE_GC_TRANSPORT_WORDS (fasdump_transport_words)
   /* Signal error here if insufficient space -- otherwise
      gc_transport_words() might terminate the microcode.  */
   if (!tospace_available_p (n_words))
-    signal_error_from_primitive (ERR_FASDUMP_OBJECT_TOO_LARGE);
+    signal_error_from_primitive (ERR_FASDUMP_OBJECT_TOO_LARGE, current_tctx ());
   add_fixup (from);
   return (gc_transport_words (from, n_words, align_p));
 }
@@ -444,7 +444,7 @@ static
 DEFINE_GC_HANDLER (handle_environment)
 {
   if (current_env_mode != FE_DUMP)
-    signal_error_from_primitive (ERR_FASDUMP_ENVIRONMENT);
+    signal_error_from_primitive (ERR_FASDUMP_ENVIRONMENT, current_tctx ());
   (*scan) = (GC_HANDLE_VECTOR (object, false));
   return (scan + 1);
 }

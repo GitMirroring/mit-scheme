@@ -65,9 +65,9 @@ eval_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 }
 
 static inline int_action_t
-eval_error (long code)
+eval_error (long code, tctx_t* tctx)
 {
-  Do_Micro_Error (code, false);
+  Do_Micro_Error (code, false, tctx);
   return INT_ACTION_APPLY_PROC;
 }
 
@@ -249,7 +249,7 @@ eval_variable (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  return eval_error (code);
+  return eval_error (code, tctx);
 }
 
 static int_action_t
@@ -298,7 +298,7 @@ eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
       return eval_lambda (exp, env, tctx);
 
     case TC_MANIFEST_NM_VECTOR:
-      return eval_error (ERR_EXECUTE_MANIFEST_VECTOR);
+      return eval_error (ERR_EXECUTE_MANIFEST_VECTOR, tctx);
 
     case TC_SCODE_QUOTE:
       return eval_scode_quote (exp, env, tctx);
@@ -307,7 +307,7 @@ eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
       return eval_sequence (exp, env, tctx);
 
     case TC_SYNTAX_ERROR:
-      return eval_error (ERR_SYNTAX_ERROR);
+      return eval_error (ERR_SYNTAX_ERROR, tctx);
 
     case TC_THE_ENVIRONMENT:
       return single_val (env, tctx);
@@ -405,7 +405,7 @@ cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 
     default:
       push_cont (ret, exp, s);
-      return eval_error (code);
+      return eval_error (code, tctx);
     }
 }
 
@@ -433,7 +433,7 @@ cont_assignment_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  return eval_error (code);
+  return eval_error (code, tctx);
 }
 
 static inline int_action_t
@@ -456,7 +456,7 @@ cont_definition_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  return eval_error (code);
+  return eval_error (code, tctx);
 }
 
 static inline int_action_t
@@ -693,7 +693,7 @@ apply_cont (tctx_t* tctx)
 #endif
     default:
       push_cont (ret, exp, s);
-      Do_Micro_Error (ERR_INAPPLICABLE_CONTINUATION, true);
+      Do_Micro_Error (ERR_INAPPLICABLE_CONTINUATION, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 }
@@ -707,7 +707,7 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
   if (!IMPLEMENTED_PRIMITIVE_P (proc))
     {
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_UNIMPLEMENTED_PRIMITIVE, true);
+      Do_Micro_Error (ERR_UNIMPLEMENTED_PRIMITIVE, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
   unsigned long n_args = apply_frame_n_args (s);
@@ -716,7 +716,7 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
   else if (PRIMITIVE_ARITY (proc) != n_args)
     {
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 
@@ -767,7 +767,7 @@ apply_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
             || (frame_size < VECTOR_LENGTH (names))))
       {
         push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-        Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+        Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
         return INT_ACTION_APPLY_PROC;
       }
   }
@@ -804,7 +804,7 @@ apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
   if ((nargs < reqs) || ((rest == 0) && (nargs > nfixed)))
     {
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 
@@ -867,7 +867,7 @@ apply_control_point (SCHEME_OBJECT proc, tctx_t* tctx)
   if (apply_frame_size (s) != 2)
     {
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true);
+      Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
   SCHEME_OBJECT val = apply_frame_first_arg (s);
@@ -909,7 +909,7 @@ apply_record (SCHEME_OBJECT proc, tctx_t* tctx)
   if (applicator == SHARP_F)
     {
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true);
+      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
   unsigned long frame_size = apply_frame_size (s);
@@ -947,11 +947,11 @@ apply_compiled_entry (SCHEME_OBJECT proc, tctx_t* tctx)
     case ERR_INAPPLICABLE_OBJECT:
     case ERR_WRONG_NUMBER_OF_ARGUMENTS:
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (dispatch_code, true);
+      Do_Micro_Error (dispatch_code, true, tctx);
       return INT_ACTION_APPLY_PROC;
 
     default:
-      Do_Micro_Error (dispatch_code, true);
+      Do_Micro_Error (dispatch_code, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 }
@@ -1013,7 +1013,7 @@ apply_proc (tctx_t* tctx)
 
     default:
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
-      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true);
+      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 }

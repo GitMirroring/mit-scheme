@@ -957,7 +957,7 @@ cons_alien (const void * addr)
      Scheme side with the record type. */
 
   SCM alien;
-  Primitive_GC_If_Needed (5);
+  primitive_gc_if_needed (5, current_tctx ());
   alien = (MAKE_POINTER_OBJECT (TC_RECORD, Free));
   (*Free++) = MAKE_OBJECT (TC_MANIFEST_VECTOR, 4);
   (*Free++) = SHARP_F;

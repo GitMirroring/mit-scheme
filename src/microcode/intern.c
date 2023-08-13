@@ -118,7 +118,7 @@ weaken_symbol (SCHEME_OBJECT symbol)
 static SCHEME_OBJECT
 make_symbol (SCHEME_OBJECT name, SCHEME_OBJECT * cell)
 {
-  Primitive_GC_If_Needed (4);
+  primitive_gc_if_needed (4, current_tctx ());
   {
     SCHEME_OBJECT symbol = (MAKE_POINTER_OBJECT (TC_INTERNED_SYMBOL, Free));
     Free += 2;

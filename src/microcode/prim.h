@@ -73,9 +73,9 @@ extern SCHEME_OBJECT Prim_unimplemented (tctx_t*);
 
 #define PRIMITIVE_N_PARAMETERS(prim) (PRIMITIVE_ARITY (prim))
 
-#define PRIMITIVE_N_ARGUMENTS(prim)					\
-  (((PRIMITIVE_ARITY (prim)) == LEXPR_PRIMITIVE_ARITY)			\
-   ? GET_LEXPR_ACTUALS							\
+#define PRIMITIVE_N_ARGUMENTS(prim)                                     \
+  (((PRIMITIVE_ARITY (prim)) == LEXPR_PRIMITIVE_ARITY)                  \
+   ? primitive_lexpr_actuals (tctx)                                     \
    : (PRIMITIVE_ARITY (prim)))
 
 #endif /* SCM_PRIM_H */

@@ -35,7 +35,7 @@ hunk3_cons (SCHEME_OBJECT cxr0,
        SCHEME_OBJECT cxr1,
        SCHEME_OBJECT cxr2)
 {
-  Primitive_GC_If_Needed (3);
+  primitive_gc_if_needed (3, current_tctx ());
   (*Free++) = cxr0;
   (*Free++) = cxr1;
   (*Free++) = cxr2;

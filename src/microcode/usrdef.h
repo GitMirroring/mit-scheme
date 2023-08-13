@@ -33,11 +33,11 @@ USA.
 #include "scheme.h"
 #include "prims.h"
 
-extern SCHEME_OBJECT (* (Static_Primitive_Procedure_Table[])) (void);
+extern SCHEME_OBJECT (*(Static_Primitive_Procedure_Table[])) (tctx_t*);
 extern int Static_Primitive_Arity_Table[];
 extern int Static_Primitive_Count_Table[];
-extern const char * Static_Primitive_Name_Table[];
-extern const char * Static_Primitive_Documentation_Table[];
+extern const char* Static_Primitive_Name_Table[];
+extern const char* Static_Primitive_Documentation_Table[];
 extern long MAX_STATIC_PRIMITIVE;
 
 #endif /* SCM_USRDEF_H */

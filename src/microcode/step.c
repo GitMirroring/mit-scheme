@@ -53,20 +53,17 @@ install_traps (SCHEME_OBJECT state)
 DEFINE_PRIMITIVE ("PRIMITIVE-EVAL-STEP", Prim_eval_step, 3, 3, 0)
 {
   PRIMITIVE_HEADER (3);
+  sstack_t* s = tctx_stack (tctx);
   CHECK_ARG (3, HUNK3_P);
-  {
-    SCHEME_OBJECT expression = (ARG_REF (1));
-    SCHEME_OBJECT environment = (ARG_REF (2));
-    SCHEME_OBJECT hooks = (ARG_REF (3));
-    canonicalize_primitive_context ();
-    POP_PRIMITIVE_FRAME (3);
-    install_traps (hooks);
-    SET_EXP (expression);
-    SET_ENV (environment);
-  }
-  PRIMITIVE_ABORT (PRIM_NO_TRAP_EVAL);
-  /*NOTREACHED*/
-  PRIMITIVE_RETURN (UNSPECIFIC);
+  SCHEME_OBJECT exp = (ARG_REF (1));
+  SCHEME_OBJECT env = (ARG_REF (2));
+  SCHEME_OBJECT hooks = (ARG_REF (3));
+  canonicalize_primitive_context (tctx);
+  pop_primitive_frame (3, s);
+  install_traps (hooks);
+  add_val (exp, tctx);
+  add_val (env, tctx);
+  abort_to_interpreter (PRIM_NO_TRAP_EVAL, tctx);
 }
 
 /* (PRIMITIVE-APPLY-STEP OPERATOR OPERANDS HUNK3)
@@ -81,48 +78,44 @@ DEFINE_PRIMITIVE ("PRIMITIVE-EVAL-STEP", Prim_eval_step, 3, 3, 0)
 DEFINE_PRIMITIVE ("PRIMITIVE-APPLY-STEP", Prim_apply_step, 3, 3, 0)
 {
   PRIMITIVE_HEADER (3);
-  canonicalize_primitive_context ();
+  sstack_t* s = tctx_stack (tctx);
+  canonicalize_primitive_context (tctx);
   CHECK_ARG (3, HUNK3_P);
+  SCHEME_OBJECT procedure = ARG_REF (1);
+  SCHEME_OBJECT argument_list = ARG_REF (2);
+  SCHEME_OBJECT hooks = ARG_REF (3);
+
+  unsigned int n_args = 0;
   {
-    SCHEME_OBJECT hooks = (ARG_REF (3));
-    long number_of_args = 0;
-    {
-      SCHEME_OBJECT procedure = (ARG_REF (1));
-      SCHEME_OBJECT argument_list = (ARG_REF (2));
+    SCHEME_OBJECT scan_list = argument_list;
+    while (PAIR_P (scan_list))
       {
-	SCHEME_OBJECT scan_list;
-	scan_list = argument_list;
-	while (PAIR_P (scan_list))
-	  {
-	    number_of_args += 1;
-	    scan_list = (PAIR_CDR (scan_list));
-	  }
-	if (!EMPTY_LIST_P (scan_list))
-	  error_wrong_type_arg (2);
+        n_args += 1;
+        scan_list = PAIR_CDR (scan_list);
       }
-      POP_PRIMITIVE_FRAME (3);
-      install_traps (hooks);
-      {
-	SCHEME_OBJECT * scan_stack = (STACK_LOC (- number_of_args));
-	SCHEME_OBJECT scan_list;
-	long i;
-	Will_Push (number_of_args + STACK_ENV_EXTRA_SLOTS + 1);
-	stack_pointer = scan_stack;
-	scan_list = argument_list;
-	for (i = number_of_args; (i > 0); i -= 1)
-	  {
-	    (*scan_stack++) = (PAIR_CAR (scan_list));
-	    scan_list = (PAIR_CDR (scan_list));
-	  }
-	STACK_PUSH (procedure);
-	PUSH_APPLY_FRAME_HEADER (number_of_args);
-	Pushed ();
-      }
-    }
+    if (!EMPTY_LIST_P (scan_list))
+      error_wrong_type_arg (2);
   }
-  PRIMITIVE_ABORT (PRIM_NO_TRAP_APPLY);
-  /*NOTREACHED*/
-  PRIMITIVE_RETURN (UNSPECIFIC);
+
+  pop_primitive_frame (3, s);
+  install_traps (hooks);
+
+  stack_check (n_args + STACK_ENV_EXTRA_SLOTS + 1, s);
+  {
+    SCHEME_OBJECT* end = stack_pointer (s);
+    SCHEME_OBJECT* start = end - n_args;
+    SCHEME_OBJECT* scan_stack = start;
+    SCHEME_OBJECT scan_list = argument_list;
+    while (PAIR_P (scan_list))
+      {
+        *scan_stack++ = PAIR_CAR (scan_list);
+        scan_list = PAIR_CDR (scan_list);
+      }
+    set_stack_pointer (start, s);
+  }
+  stack_push (procedure, s);
+  stack_push (make_apply_frame_header (n_args + 1), s);
+  abort_to_interpreter (PRIM_NO_TRAP_APPLY, tctx);
 }
 
 /* (PRIMITIVE-RETURN-STEP VALUE HUNK3)
@@ -134,16 +127,16 @@ DEFINE_PRIMITIVE ("PRIMITIVE-APPLY-STEP", Prim_apply_step, 3, 3, 0)
 DEFINE_PRIMITIVE ("PRIMITIVE-RETURN-STEP", Prim_return_step, 2, 2, 0)
 {
   PRIMITIVE_HEADER (2);
-  canonicalize_primitive_context ();
-  CHECK_ARG (2, HUNK3_P);
-  {
-    SCHEME_OBJECT value = (ARG_REF (1));
-    SCHEME_OBJECT hooks = (ARG_REF (2));
+  canonicalize_primitive_context (tctx);
 
-    POP_PRIMITIVE_FRAME (2);
-    install_traps (hooks);
-    SET_VAL (value);
-    PRIMITIVE_ABORT (PRIM_NO_TRAP_POP_RETURN);
-    PRIMITIVE_RETURN (UNSPECIFIC);
-  }
+  CHECK_ARG (2, HUNK3_P);
+  SCHEME_OBJECT value = (ARG_REF (1));
+  SCHEME_OBJECT hooks = (ARG_REF (2));
+
+  pop_primitive_frame (2, tctx_stack (tctx));
+  install_traps (hooks);
+  add_val (value, tctx);
+  abort_to_interpreter (PRIM_NO_TRAP_POP_RETURN, tctx);
+  /*NOTREACHED*/
+  PRIMITIVE_RETURN (UNSPECIFIC);
 }

@@ -53,53 +53,19 @@ SCHEME_OBJECT fn_name (tctx_t* tctx)
 #endif
 
 /* Primitives return by performing one of the following operations. */
-#define PRIMITIVE_RETURN(value)	return (value)
+#define PRIMITIVE_RETURN(value) return (value)
 #define PRIMITIVE_ABORT(code) (abort_to_interpreter ((code), tctx))
 
-#define PRIMITIVE_REDUCE(exp, env) do                                   \
-{                                                                       \
-  add_val ((exp), tctx);                                                \
-  add_val ((env), tctx);                                                \
-  PRIMITIVE_ABORT (PRIM_DO_EXPRESSION);                                 \
-} while (false)
+static inline void
+primitive_reduce (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  add_val (exp, tctx);
+  add_val (env, tctx);
+  abort_to_interpreter (PRIM_DO_EXPRESSION, tctx);
+}
 
-/* Various utilities */
-
-#define Primitive_GC(Amount) do                                         \
-{                                                                       \
-  SCHEME_OBJECT* Free_primitive = get_primitive_free (current_tctx ()); \
-  if (Free_primitive < heap_start)                                      \
-    {                                                                   \
-      outf_fatal                                                        \
-        ("\nMicrocode requested primitive GC outside primitive!\n");    \
-      Microcode_Termination (TERM_EXIT);                                \
-    }                                                                   \
-  if (Free < Free_primitive)                                            \
-    {                                                                   \
-      outf_fatal ("\nFree has gone backwards!\n");                      \
-      Microcode_Termination (TERM_EXIT);                                \
-    }                                                                   \
-  REQUEST_GC ((Amount) + (Free - Free_primitive));                      \
-  signal_interrupt_from_primitive ();                                   \
-} while (false)
-
-#define Primitive_GC_If_Needed(Amount) do				\
-{									\
-  if (GC_NEEDED_P (Amount)) Primitive_GC (Amount);			\
-} while (false)
-
-#define CHECK_ARG(argument, type_p) do					\
-{									\
-  if (! (type_p (ARG_REF (argument))))					\
-    error_wrong_type_arg (argument);					\
-} while (false)
-
-#define ARG_LOC(argument) (stack_loc (argument - 1, current_stack ()))
-#define ARG_REF(argument) (stack_ref (argument - 1, current_stack ()))
-#define POP_PRIMITIVE_FRAME(arity) (increment_sp (arity, current_stack ()))
-
-extern void signal_error_from_primitive (long) NORETURN;
-extern void signal_interrupt_from_primitive (void) NORETURN;
+extern void signal_error_from_primitive (long, tctx_t*) NORETURN;
+extern void signal_interrupt_from_primitive (tctx_t*) NORETURN;
 extern void error_wrong_type_arg (int) NORETURN;
 extern void error_bad_range_arg (int) NORETURN;
 extern void error_external_return (void) NORETURN;
@@ -118,7 +84,67 @@ extern double arg_real_number (int);
 extern double arg_real_in_range (int, double, double);
 extern long arg_ascii_char (int);
 extern long arg_ascii_integer (int);
+
+/* Various utilities */
 
+static inline void
+primitive_gc (unsigned long amount, tctx_t* tctx)
+{
+  SCHEME_OBJECT* Free_primitive = get_primitive_free (tctx);
+  if (Free_primitive < heap_start)
+    {
+      outf_fatal
+        ("\nMicrocode requested primitive GC outside primitive!\n");
+      Microcode_Termination (TERM_EXIT);
+    }
+  if (Free < Free_primitive)
+    {
+      outf_fatal ("\nFree has gone backwards!\n");
+      Microcode_Termination (TERM_EXIT);
+    }
+  REQUEST_GC (amount + (Free - Free_primitive));
+  signal_interrupt_from_primitive (tctx);
+}
+
+static inline void
+primitive_gc_if_needed (unsigned long amount, tctx_t* tctx)
+{
+  if (GC_NEEDED_P (amount))
+    primitive_gc (amount, tctx);
+}
+
+#define Primitive_GC(amount) (primitive_gc ((amount), tctx))
+#define Primitive_GC_If_Needed(amount) (primitive_gc_if_needed ((amount), tctx))
+
+#define CHECK_ARG(argument, type_p) do					\
+{									\
+  if (! (type_p (ARG_REF (argument))))					\
+    error_wrong_type_arg (argument);					\
+} while (false)
+
+static inline SCHEME_OBJECT
+arg_ref (unsigned int n, sstack_t* s)
+{
+  return stack_ref (n - 1, s);
+}
+
+static inline SCHEME_OBJECT*
+arg_loc (unsigned int n, sstack_t* s)
+{
+  return stack_loc (n - 1, s);
+}
+
+static inline void
+pop_primitive_frame (unsigned int arity, sstack_t* s)
+{
+  return increment_sp (arity, s);
+}
+
+#define ARG_LOC(n) (arg_loc (n, current_stack ()))
+#define ARG_REF(n) (arg_ref (n, current_stack ()))
+#define POP_PRIMITIVE_FRAME(arity)                                      \
+  (pop_primitive_frame (arity, current_stack ()))
+
 #define UNSIGNED_FIXNUM_ARG(arg)					\
   ((FIXNUM_P (ARG_REF (arg)))						\
    ? (UNSIGNED_FIXNUM_TO_LONG (ARG_REF (arg)))				\

@@ -28,9 +28,10 @@ USA.
 /* Stack abstraction */
 
 #include "const.h"
-#include "tcontext.h"
+#include "intrpt.h"
 #include "object.h"
 #include "stack.h"
+#include "tcontext.h"
 
 static sstack_t default_stack_v;
 

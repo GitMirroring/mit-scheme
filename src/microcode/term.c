@@ -63,40 +63,38 @@ init_exit_scheme (void)
 }
 
 static void
-attempt_termination_backout (int code)
+attempt_termination_backout (int code, tctx_t* tctx)
 {
-  outf_flush_error(); /* NOT flush_fatal */
-  if ((WITHIN_CRITICAL_SECTION_P ())
-      || (code == TERM_HALT)
-      || (! (VECTOR_P (fixed_objects))))
+  outf_flush_error (); /* NOT flush_fatal */
+  if (WITHIN_CRITICAL_SECTION_P ()
+      || code == TERM_HALT
+      || !VECTOR_P (fixed_objects))
     return;
-  {
-    SCHEME_OBJECT Term_Vector
-      = (VECTOR_REF (fixed_objects, Termination_Proc_Vector));
-    if ((! (VECTOR_P (Term_Vector)))
-	|| (((long) (VECTOR_LENGTH (Term_Vector))) <= code))
-      return;
-    {
-      SCHEME_OBJECT Handler = (VECTOR_REF (Term_Vector, code));
-      if (Handler == SHARP_F)
-	return;
-     Will_Push (CONTINUATION_SIZE
-		+ STACK_ENV_EXTRA_SLOTS
-		+ ((code == TERM_NO_ERROR_HANDLER) ? 5 : 4));
-      SET_RC (RC_HALT);
-      SET_EXP (LONG_TO_UNSIGNED_FIXNUM (code));
-      SAVE_CONT ();
-      if (code == TERM_NO_ERROR_HANDLER)
-	STACK_PUSH (LONG_TO_UNSIGNED_FIXNUM (death_blow));
-      PUSH_VAL ();		/* Arg 3 */
-      PUSH_ENV ();		/* Arg 2 */
-      PUSH_EXP ();		/* Arg 1 */
-      STACK_PUSH (Handler);	/* The handler function */
-      PUSH_APPLY_FRAME_HEADER ((code == TERM_NO_ERROR_HANDLER) ? 4 : 3);
-     Pushed ();
-      abort_to_interpreter (PRIM_NO_TRAP_APPLY);
-    }
-  }
+
+  sstack_t* s = tctx_stack (tctx);
+  SCHEME_OBJECT Term_Vector
+    = VECTOR_REF (fixed_objects, Termination_Proc_Vector);
+  if (!VECTOR_P (Term_Vector)
+      || (long) VECTOR_LENGTH (Term_Vector) <= code)
+    return;
+
+  SCHEME_OBJECT Handler = (VECTOR_REF (Term_Vector, code));
+  if (Handler == SHARP_F)
+    return;
+  stack_check (CONTINUATION_SIZE
+	       + STACK_ENV_EXTRA_SLOTS
+	       + ((code == TERM_NO_ERROR_HANDLER) ? 5 : 4),
+               s);
+  push_cont_rc (RC_HALT, LONG_TO_UNSIGNED_FIXNUM (code), s);
+  if (code == TERM_NO_ERROR_HANDLER)
+    stack_push (LONG_TO_UNSIGNED_FIXNUM (death_blow), s);
+  PUSH_VAL ();		/* Arg 3 */
+  PUSH_ENV ();		/* Arg 2 */
+  PUSH_EXP ();		/* Arg 1 */
+  STACK_PUSH (Handler);	/* The handler function */
+  PUSH_APPLY_FRAME_HEADER ((code == TERM_NO_ERROR_HANDLER) ? 4 : 3);
+  Pushed ();
+  abort_to_interpreter (PRIM_NO_TRAP_APPLY);
 }
 
 static void

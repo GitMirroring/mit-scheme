@@ -46,16 +46,6 @@ SCHEME_OBJECT * heap_alloc_limit;
 SCHEME_OBJECT * heap_start;
 SCHEME_OBJECT * heap_end;
 
-/* pointer to most-recently pushed item */
-SCHEME_OBJECT * stack_pointer;
-
-/*-strict limit for stack_pointer */
-SCHEME_OBJECT * stack_guard;
-
-/* limits of stack */
-SCHEME_OBJECT * stack_start;
-SCHEME_OBJECT * stack_end;
-
 /* next free word in constant space */
 SCHEME_OBJECT * constant_alloc_next;
 

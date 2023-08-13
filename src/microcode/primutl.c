@@ -99,7 +99,7 @@ strcmp_ci (const char * s1, const char * s2)
 }
 
 SCHEME_OBJECT
-Prim_unimplemented (void)
+Prim_unimplemented (tctx_t* tctx)
 {
   PRIMITIVE_HEADER (-1);
 

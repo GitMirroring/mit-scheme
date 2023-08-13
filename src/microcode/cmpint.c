@@ -1098,7 +1098,7 @@ cc_block_linkage_info (SCHEME_OBJECT block)
   unsigned long n_words;
 
   count_linkage_sections (const_addr, block_end, (&n_sections), (&n_words));
-  Primitive_GC_If_Needed (n_words);
+  primitive_gc_if_needed (n_words, current_tctx ());
   return (read_linkage_sections (const_addr, block_end, n_sections, n_words));
 }
 
