@@ -30,9 +30,10 @@ USA.
 #ifndef SCM_INTRPT_H
 #define SCM_INTRPT_H 1
 
-#include "tcontext.h"
+#include "cmpint.h"
 #include "registers.h"
 #include "stack.h"
+#include "tcontext.h"
 
 /* Interrupt bits -- scanned from LSB (1) to MSB (16) */
 
@@ -74,33 +75,41 @@ USA.
 #define INTERRUPT_ENABLED_P(mask) ((GET_INT_MASK & (mask)) != 0)
 #define INTERRUPT_PENDING_P(mask) (((PENDING_INTERRUPTS ()) & (mask)) != 0)
 
-#define SET_INTERRUPT_MASK(mask) do                                     \
-{                                                                       \
-  SET_INT_MASK (mask);                                                  \
-  compiler_setup_interrupt (current_stack ());                          \
-} while (0)
+static inline void
+set_interrupt_mask (unsigned long mask, tctx_t* tctx)
+{
+  SET_INT_MASK (mask & INT_Mask);
+  compiler_setup_interrupt (tctx_stack (tctx));
+}
 
-#define REQUEST_INTERRUPT(code) do                                      \
-{                                                                       \
-  SET_INT_CODE (GET_INT_CODE | (code));                                 \
-  compiler_setup_interrupt (current_stack ());                          \
-} while (0)
+static inline void
+request_interrupt (unsigned int code, tctx_t* tctx)
+{
+  SET_INT_CODE (GET_INT_CODE | code);
+  compiler_setup_interrupt (tctx_stack (tctx));
+}
 
-#define CLEAR_INTERRUPT(code) do                                        \
-{                                                                       \
-  SET_INT_CODE (GET_INT_CODE &~ (code));                                \
-  compiler_setup_interrupt (current_stack ());                          \
-} while (0)
+static inline void
+clear_interrupt (unsigned long code, tctx_t* tctx)
+{
+  SET_INT_CODE (GET_INT_CODE &~ (code));
+  compiler_setup_interrupt (tctx_stack (tctx));
+}
 
-#define INITIALIZE_INTERRUPTS(mask) do                                  \
-{                                                                       \
-  SET_INT_MASK (mask);                                                  \
-  SET_INT_CODE (0);                                                     \
-  compiler_setup_interrupt (current_stack ());                          \
-} while (0)
+static inline void
+initialize_interrupts (unsigned long mask, tctx_t* tctx)
+{
+  SET_INT_MASK (mask);
+  SET_INT_CODE (0);
+  compiler_setup_interrupt (tctx_stack (tctx));
+}
+
+#define SET_INTERRUPT_MASK(mask) (set_interrupt_mask ((mask), current_tctx ()))
+#define REQUEST_INTERRUPT(code) (request_interrupt ((code), current_tctx ()))
+#define CLEAR_INTERRUPT(code) (clear_interrupt ((code), current_tctx ()))
+#define INITIALIZE_INTERRUPTS(mask)                                     \
+  (initialize_interrupts ((mask), current_tctx ()))
 
 #define RELEASE_INTERRUPT_REGISTERS()
-
-extern void compiler_setup_interrupt(sstack_t*);
 
 #endif  // SCM_INTRPT_H

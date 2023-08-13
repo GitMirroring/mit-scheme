@@ -35,6 +35,7 @@ USA.
 #include "gc.h"
 #include "cmpgc.h"
 #include "fasl.h"
+#include "tcontext.h"
 
 #ifdef ENABLE_DEBUGGING_TOOLS
 #  ifndef ENABLE_GC_DEBUGGING_TOOLS
@@ -42,33 +43,33 @@ USA.
 #  endif
 #endif
 
-typedef SCHEME_OBJECT * gc_handler_t
-  (SCHEME_OBJECT *, SCHEME_OBJECT);
+typedef SCHEME_OBJECT* gc_handler_t
+  (SCHEME_OBJECT*, SCHEME_OBJECT, tctx_t*);
 
 #define DEFINE_GC_HANDLER(handler_name)					\
-SCHEME_OBJECT *								\
-handler_name (SCHEME_OBJECT * scan, SCHEME_OBJECT object)
+SCHEME_OBJECT*								\
+handler_name (SCHEME_OBJECT* scan, SCHEME_OBJECT object, tctx_t* tctx)
 
 typedef SCHEME_OBJECT gc_tuple_handler_t
-  (SCHEME_OBJECT, unsigned int);
+  (SCHEME_OBJECT, unsigned int, tctx_t*);
 
 #define DEFINE_GC_TUPLE_HANDLER(handler_name)				\
 SCHEME_OBJECT								\
-handler_name (SCHEME_OBJECT tuple, unsigned int n_words)
+handler_name (SCHEME_OBJECT tuple, unsigned int n_words, tctx_t* tctx)
 
 typedef SCHEME_OBJECT gc_vector_handler_t
-  (SCHEME_OBJECT, bool);
+  (SCHEME_OBJECT, bool, tctx_t*);
 
 #define DEFINE_GC_VECTOR_HANDLER(handler_name)				\
 SCHEME_OBJECT								\
-handler_name (SCHEME_OBJECT vector, bool align_p)
+handler_name (SCHEME_OBJECT vector, bool align_p, tctx_t* tctx)
 
 typedef SCHEME_OBJECT gc_object_handler_t
-  (SCHEME_OBJECT);
+  (SCHEME_OBJECT, tctx_t*);
 
 #define DEFINE_GC_OBJECT_HANDLER(handler_name)				\
 SCHEME_OBJECT								\
-handler_name (SCHEME_OBJECT object)
+handler_name (SCHEME_OBJECT object, tctx_t* tctx)
 
 typedef SCHEME_OBJECT * gc_precheck_from_t (SCHEME_OBJECT *);
 
@@ -124,20 +125,20 @@ typedef struct
 #define GCT_RAW_ADDRESS_TO_CC_ENTRY(table) ((table)->raw_address_to_cc_entry)
 #define GCT_CC_ENTRY_TO_RAW_ADDRESS(table) ((table)->cc_entry_to_raw_address)
 
-#define GC_HANDLE_TUPLE(object, n_words)				\
-  ((* (GCT_TUPLE (current_gc_table))) ((object), (n_words)))
+#define GC_HANDLE_TUPLE(object, n_words, tctx)				\
+  ((*GCT_TUPLE (current_gc_table)) ((object), (n_words), (tctx)))
 
-#define GC_HANDLE_VECTOR(object, align_p)				\
-  ((* (GCT_VECTOR (current_gc_table))) ((object), (align_p)))
+#define GC_HANDLE_VECTOR(object, align_p, tctx)				\
+  ((*GCT_VECTOR (current_gc_table)) ((object), (align_p), (tctx)))
 
 #define GC_HANDLE_CC_ENTRY(object)					\
-  ((* (GCT_CC_ENTRY (current_gc_table))) (object))
+  ((*GCT_CC_ENTRY (current_gc_table)) (object, (tctx)))
 
 #define GC_HANDLE_CC_RETURN(object)					\
-  ((* (GCT_CC_RETURN (current_gc_table))) (object))
+  ((*GCT_CC_RETURN (current_gc_table)) (object, (tctx)))
 
 #define GC_PRECHECK_FROM(from)						\
-  ((* (GCT_PRECHECK_FROM (current_gc_table))) (from))
+  ((*GCT_PRECHECK_FROM (current_gc_table)) (from))
 
 #define GC_TRANSPORT_WORDS(from, n_words, align_p)			\
   ((* (GCT_TRANSPORT_WORDS (current_gc_table))) ((from), (n_words), (align_p)))
@@ -191,7 +192,7 @@ extern void initialize_gc_table (gc_table_t *, bool);
 
 typedef void gc_tospace_allocator_t
   (unsigned long, SCHEME_OBJECT **, SCHEME_OBJECT **);
-typedef void gc_abort_handler_t (void);
+typedef void gc_abort_handler_t (tctx_t*);
 typedef bool gc_walk_proc_t (SCHEME_OBJECT *, SCHEME_OBJECT *, void *);
 
 extern void initialize_gc
@@ -212,11 +213,11 @@ extern bool save_tospace (gc_walk_proc_t *, void *);
 extern void discard_tospace (void);
 
 extern void initialize_weak_chain (void);
-extern void update_weak_pointers (void);
+extern void update_weak_pointers (tctx_t*);
 
 extern gc_table_t * std_gc_table (void);
-extern void gc_scan_oldspace (SCHEME_OBJECT *, SCHEME_OBJECT *);
-extern void gc_scan_tospace (SCHEME_OBJECT *, SCHEME_OBJECT *);
+extern void gc_scan_oldspace (SCHEME_OBJECT*, SCHEME_OBJECT*, tctx_t*);
+extern void gc_scan_tospace (SCHEME_OBJECT*, SCHEME_OBJECT*, tctx_t*);
 
 extern void std_gc_death (const char *, ...)
   NORETURN

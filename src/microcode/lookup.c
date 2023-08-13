@@ -55,7 +55,7 @@ USA.
   if ((expression) != PRIM_DONE)					\
     {									\
       outf_fatal ("\nRan out of guaranteed space!\n");			\
-      Microcode_Termination (TERM_EXIT);				\
+      Microcode_Termination (TERM_EXIT, current_tctx ());		\
     }									\
 }
 

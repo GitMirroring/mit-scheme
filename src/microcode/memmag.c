@@ -223,9 +223,9 @@ allocate_tospace (unsigned long n_words,
 }
 
 static void
-abort_gc (void)
+abort_gc (tctx_t* tctx)
 {
-  Microcode_Termination (TERM_EXIT);
+  Microcode_Termination (TERM_EXIT, tctx);
 }
 
 bool
@@ -257,7 +257,7 @@ the primitive GC daemons before returning.")
 	 (unsigned long) Free,
 	 (unsigned long) heap_alloc_limit,
 	 (unsigned long) heap_end);
-      Microcode_Termination (TERM_NO_SPACE);
+      Microcode_Termination (TERM_NO_SPACE, tctx);
     }
 
   if ((ARG_HEAP_RESERVED (1)) < (heap_end - heap_start))
@@ -316,14 +316,14 @@ std_gc_pt1 (tctx_t* tctx)
 
   current_gc_table = (std_gc_table ());
   sstack_t* s = tctx_stack (tctx);
-  gc_scan_oldspace (stack_pointer (s), stack_end (s));
-  gc_scan_oldspace (constant_start, constant_alloc_next);
-  gc_scan_tospace (saved_to, 0);
+  gc_scan_oldspace (stack_pointer (s), stack_end (s), tctx);
+  gc_scan_oldspace (constant_start, constant_alloc_next, tctx);
+  gc_scan_tospace (saved_to, 0, tctx);
 
 #ifdef ENABLE_GC_DEBUGGING_TOOLS
   finalize_gc_object_references ();
 #endif
-  update_weak_pointers ();
+  update_weak_pointers (tctx);
 }
 
 void
@@ -380,7 +380,7 @@ stack_death (const char* name)
     ("\n%s: The stack has overflowed and overwritten adjacent memory.\n",
      name);
   outf_fatal ("This was probably caused by a runaway recursion.\n");
-  Microcode_Termination (TERM_STACK_OVERFLOW);
+  Microcode_Termination (TERM_STACK_OVERFLOW, current_tctx ());
   /*NOTREACHED*/
 }
 

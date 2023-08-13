@@ -71,7 +71,7 @@ copy_to_constant_space (SCHEME_OBJECT * source, unsigned long n_words)
   if (n_words > (constant_end - constant_alloc_next))
     {
       outf_fatal ("\nInsufficient constant space!\n");
-      Microcode_Termination (TERM_NO_SPACE);
+      Microcode_Termination (TERM_NO_SPACE, current_tctx ());
     }
   result = constant_alloc_next;
   limit = (constant_alloc_next + n_words);

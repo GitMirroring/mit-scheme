@@ -40,8 +40,8 @@ extern void get_band_parameters (unsigned long *, unsigned long *);
 #  define USING_MESSAGE_BOX_FOR_FATAL_OUTPUT
 #endif
 
-static void edwin_auto_save (void);
-static void delete_temp_files (void);
+static void edwin_auto_save (tctx_t*);
+static void delete_temp_files (tctx_t*);
 
 #define BYTES_TO_BLOCKS(n) (((n) + 1023) / 1024)
 #define MIN_HEAP_DELTA	50
@@ -67,40 +67,40 @@ attempt_termination_backout (int code, tctx_t* tctx)
 {
   outf_flush_error (); /* NOT flush_fatal */
   if (WITHIN_CRITICAL_SECTION_P ()
+      || code < 0
       || code == TERM_HALT
-      || !VECTOR_P (fixed_objects))
+      || !VECTOR_P (fixed_objects)
+      || tctx == 0)
     return;
 
-  sstack_t* s = tctx_stack (tctx);
-  SCHEME_OBJECT Term_Vector
+  SCHEME_OBJECT term_vector
     = VECTOR_REF (fixed_objects, Termination_Proc_Vector);
-  if (!VECTOR_P (Term_Vector)
-      || (long) VECTOR_LENGTH (Term_Vector) <= code)
+  if (!(VECTOR_P (term_vector)
+        && code < VECTOR_LENGTH (term_vector)))
     return;
 
-  SCHEME_OBJECT Handler = (VECTOR_REF (Term_Vector, code));
-  if (Handler == SHARP_F)
+  SCHEME_OBJECT handler = VECTOR_REF (term_vector, code);
+  if (handler == SHARP_F)
     return;
-  stack_check (CONTINUATION_SIZE
-	       + STACK_ENV_EXTRA_SLOTS
-	       + ((code == TERM_NO_ERROR_HANDLER) ? 5 : 4),
-               s);
+
+  unsigned int frame_size = (code == TERM_NO_ERROR_HANDLER) ? 5 : 4;
+  sstack_t* s = tctx_stack (tctx);
+  stack_check (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + frame_size, s);
   push_cont_rc (RC_HALT, LONG_TO_UNSIGNED_FIXNUM (code), s);
   if (code == TERM_NO_ERROR_HANDLER)
     stack_push (LONG_TO_UNSIGNED_FIXNUM (death_blow), s);
-  PUSH_VAL ();		/* Arg 3 */
-  PUSH_ENV ();		/* Arg 2 */
-  PUSH_EXP ();		/* Arg 1 */
-  STACK_PUSH (Handler);	/* The handler function */
-  PUSH_APPLY_FRAME_HEADER ((code == TERM_NO_ERROR_HANDLER) ? 4 : 3);
-  Pushed ();
-  abort_to_interpreter (PRIM_NO_TRAP_APPLY);
+  // stack_push (GET_VAL, s);
+  // stack_push (GET_ENV, s);
+  // stack_push (GET_EXP, s);
+  stack_push (handler, s);	/* The handler function */
+  stack_push (make_apply_frame_header (frame_size), s);
+  abort_to_interpreter (PRIM_NO_TRAP_APPLY, tctx);
 }
 
 static void
-termination_prefix (int code)
+termination_prefix (int code, tctx_t* tctx)
 {
-  attempt_termination_backout (code);
+  attempt_termination_backout (code, tctx);
   OS_restore_external_state ();
   /* TERM_HALT is not an error condition and thus its termination
      message should be considered normal output.  */
@@ -139,17 +139,20 @@ termination_prefix (int code)
     }
 }
 
-static void termination_suffix (int, int, bool) NORETURN;
-static void termination_suffix_trace (int) NORETURN;
+static void termination_suffix (int, int, bool, tctx_t*) NORETURN;
+static void termination_suffix_trace (int, tctx_t*) NORETURN;
 
 static void
-termination_suffix (int code, int value, bool abnormal_p)
+termination_suffix (int code, int value, bool abnormal_p, tctx_t* tctx)
 {
 #ifdef EXIT_HOOK
   EXIT_HOOK (code, value, abnormal_p);
 #endif
-  edwin_auto_save ();
-  delete_temp_files ();
+  if (tctx != 0)
+    {
+      edwin_auto_save (tctx);
+      delete_temp_files (tctx);
+    }
 #ifdef USING_MESSAGE_BOX_FOR_FATAL_OUTPUT
   /* Don't put up message box for ordinary exit.  */
   if (code != TERM_HALT)
@@ -160,60 +163,60 @@ termination_suffix (int code, int value, bool abnormal_p)
 }
 
 static void
-termination_suffix_trace (int code)
+termination_suffix_trace (int code, tctx_t* tctx)
 {
-  if (Trace_On_Error)
+  if (Trace_On_Error && tctx != 0)
     {
       outf_error ("\n\n**** Stack trace ****\n\n");
-      Back_Trace (ERROR_OUTPUT);
+      Back_Trace (ERROR_OUTPUT, stack_pointer (tctx_stack (tctx)));
     }
-  termination_suffix (code, 1, true);
+  termination_suffix (code, 1, true, tctx);
 }
 
 void
-Microcode_Termination (int code)
+Microcode_Termination (int code, tctx_t* tctx)
 {
-  termination_prefix (code);
-  termination_suffix_trace (code);
+  termination_prefix (code, tctx);
+  termination_suffix_trace (code, tctx);
 }
 
 void
-termination_normal (const int value)
+termination_normal (const int value, tctx_t* tctx)
 {
-  termination_prefix (TERM_HALT);
-  termination_suffix (TERM_HALT, value, false);
+  termination_prefix (TERM_HALT, tctx);
+  termination_suffix (TERM_HALT, value, false, tctx);
 }
 
 void
 termination_init_error (void)
 {
-  termination_prefix (TERM_EXIT);
-  termination_suffix (TERM_EXIT, 1, true);
+  termination_prefix (TERM_EXIT, 0);
+  termination_suffix (TERM_EXIT, 1, true, 0);
 }
 
 void
-termination_end_of_computation (void)
+termination_end_of_computation (tctx_t* tctx)
 {
-  termination_prefix (TERM_END_OF_COMPUTATION);
+  termination_prefix (TERM_END_OF_COMPUTATION, tctx);
   Print_Expression (GET_VAL, "Final result");
   outf_console("\n");
-  termination_suffix (TERM_END_OF_COMPUTATION, 0, false);
+  termination_suffix (TERM_END_OF_COMPUTATION, 0, false, tctx);
 }
 
 void
-termination_trap (void)
+termination_trap (tctx_t* tctx)
 {
   /* This claims not to be abnormal so that the user will
      not be asked a second time about dumping core. */
-  termination_prefix (TERM_TRAP);
-  termination_suffix (TERM_TRAP, 1, false);
+  termination_prefix (TERM_TRAP, tctx);
+  termination_suffix (TERM_TRAP, 1, false, tctx);
 }
 
 void
-termination_no_error_handler (void)
+termination_no_error_handler (tctx_t* tctx)
 {
   /* This does not print a back trace because the caller printed one. */
-  termination_prefix (TERM_NO_ERROR_HANDLER);
+  termination_prefix (TERM_NO_ERROR_HANDLER, tctx);
   if (death_blow == ERR_FASL_FILE_TOO_BIG)
     {
       unsigned long heap_size;
@@ -224,13 +227,13 @@ termination_no_error_handler (void)
 		  (MIN_HEAP_DELTA + (BYTES_TO_BLOCKS (heap_size))));
       outf_fatal ("  --constant %lu\n", (BYTES_TO_BLOCKS (const_size)));
     }
-  termination_suffix (TERM_NO_ERROR_HANDLER, 1, true);
+  termination_suffix (TERM_NO_ERROR_HANDLER, 1, true, tctx);
 }
 
 void
-termination_gc_out_of_space (void)
+termination_gc_out_of_space (tctx_t* tctx)
 {
-  termination_prefix (TERM_GC_OUT_OF_SPACE);
+  termination_prefix (TERM_GC_OUT_OF_SPACE, tctx);
   outf_fatal ("You are out of space at the end of a garbage collection!\n");
   outf_fatal
     ("Free = %#lx; heap_alloc_limit = %#lx; heap_end = %#lx\n",
@@ -239,40 +242,41 @@ termination_gc_out_of_space (void)
      ((unsigned long) heap_end));
   outf_fatal ("# words needed = %lu; # words available = %lu\n",
 	      gc_space_needed, HEAP_AVAILABLE);
-  termination_suffix_trace (TERM_GC_OUT_OF_SPACE);
+  termination_suffix_trace (TERM_GC_OUT_OF_SPACE, tctx);
 }
 
 void
-termination_eof (void)
+termination_eof (tctx_t* tctx)
 {
-  Microcode_Termination (TERM_EOF);
+  Microcode_Termination (TERM_EOF, tctx);
 }
 
 void
-termination_signal (const char * signal_name)
+termination_signal (const char* signal_name)
 {
+  tctx_t* tctx = current_tctx ();
   if (signal_name != 0)
     {
-      termination_prefix (TERM_SIGNAL);
+      termination_prefix (TERM_SIGNAL, tctx);
       outf_fatal ("Killed by %s.\n", signal_name);
     }
   else
-    attempt_termination_backout (TERM_SIGNAL);
-  termination_suffix_trace (TERM_SIGNAL);
+    attempt_termination_backout (TERM_SIGNAL, tctx);
+  termination_suffix_trace (TERM_SIGNAL, tctx);
 }
 
 static void
-bind_interpreter_state (interpreter_state_t* s, tctx_t* ic)
+bind_interpreter_state (interpreter_state_t* s, tctx_t* tctx)
 {
-  interpreter_state_t* state = interpreter_state (ic);
+  interpreter_state_t* state = interpreter_state (tctx);
   s->previous_state = state;
   s->nesting_level = state->nesting_level;
   s->dstack_position = state->dstack_position;
-  set_interpreter_state (s, ic);
+  set_interpreter_state (s, tctx);
 }
 
 static void
-unbind_interpreter_state (interpreter_state_t* s, tctx_t* ic)
+unbind_interpreter_state (interpreter_state_t* s, tctx_t* tctx)
 {
   {
     unsigned long old_mask = GET_INT_MASK;
@@ -280,11 +284,11 @@ unbind_interpreter_state (interpreter_state_t* s, tctx_t* ic)
     dstack_set_position (s->dstack_position);
     SET_INTERRUPT_MASK (old_mask);
   }
-  set_interpreter_state (s->previous_state, ic);
+  set_interpreter_state (s->previous_state, tctx);
 }
 
 static void
-edwin_auto_save (tctx_t* ic)
+edwin_auto_save (tctx_t* tctx)
 {
   static SCHEME_OBJECT position;
   static interpreter_state_t new_state;
@@ -311,7 +315,7 @@ edwin_auto_save (tctx_t* ic)
 	  unsigned char * gap_end = (start + (GROUP_GAP_END (group)));
 	  if ((start < gap_start) || (gap_end < end))
 	    {
-	      bind_interpreter_state (&new_state, ic);
+	      bind_interpreter_state (&new_state, tctx);
 	      if ((setjmp (new_state.catch_env)) == 0)
 		{
 		  Tchannel channel;
@@ -323,14 +327,14 @@ edwin_auto_save (tctx_t* ic)
 		    OS_channel_write (channel, gap_end, (end - gap_end));
 		  OS_channel_close (channel);
 		}
-	      unbind_interpreter_state (&new_state, ic);
+	      unbind_interpreter_state (&new_state, tctx);
 	    }
 	}
     }
 }
 
 static void
-delete_temp_files (tctx_t* ic)
+delete_temp_files (tctx_t* tctx)
 {
   static SCHEME_OBJECT position;
   static interpreter_state_t new_state;
@@ -345,10 +349,10 @@ delete_temp_files (tctx_t* ic)
       position = (PAIR_CDR (position));
       if (STRING_P (entry))
 	{
-	  bind_interpreter_state (&new_state, ic);
+	  bind_interpreter_state (&new_state, tctx);
 	  if ((setjmp (new_state.catch_env)) == 0)
 	    OS_file_remove (STRING_POINTER (entry));
-	  unbind_interpreter_state (&new_state, ic);
+	  unbind_interpreter_state (&new_state, tctx);
 	}
     }
 }

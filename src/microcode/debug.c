@@ -1511,7 +1511,7 @@ debug_edit_flags (void)
 	     return;
 	   case 'h':
 	   case 'H':
-	     termination_normal (0);
+	     termination_normal (0, current_tctx ());
 	   case '?':
 	   default:
 	     show_flags (1);

@@ -65,8 +65,17 @@ USA.
 #define SET_REG_P(i, v) (set_ptr_register ((REGBLOCK_##i), (v)))
 #define SET_REG_N(i, v) (set_ulong_register ((REGBLOCK_##i), (v)))
 
-extern void set_ptr_register (unsigned int, SCHEME_OBJECT*);
-extern void set_ulong_register (unsigned int, unsigned long);
+static inline void
+set_ptr_register (unsigned int index, SCHEME_OBJECT * p)
+{
+  Registers[index] = (SCHEME_OBJECT) p;
+}
+
+static inline void
+set_ulong_register (unsigned int index, unsigned long value)
+{
+  Registers[index] = (SCHEME_OBJECT) value;
+}
 
 #define GET_MEMTOP		GET_REG_P (MEMTOP)
 #define GET_INT_MASK		GET_REG_N (INT_MASK)

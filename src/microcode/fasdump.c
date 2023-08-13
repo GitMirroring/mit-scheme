@@ -159,7 +159,7 @@ at by compiled code are ignored (and discarded).")
        : FE_DROP_CC);
   current_pr = (make_prim_renumber ());
   cc_seen_p = false;
-  gc_scan_tospace (new_heap_start, 0);
+  gc_scan_tospace (new_heap_start, 0, tctx);
 
   prim_table_start = (get_newspace_ptr ());
   prim_table_length = (renumbered_primitives_export_length (current_pr));
@@ -404,14 +404,14 @@ static
 DEFINE_GC_HANDLER (handle_manifest_closure)
 {
   cc_seen_p = true;
-  return (gc_handle_manifest_closure (scan, object));
+  return (gc_handle_manifest_closure (scan, object, tctx));
 }
 
 static
 DEFINE_GC_HANDLER (handle_linkage_section)
 {
   cc_seen_p = true;
-  return (gc_handle_linkage_section (scan, object));
+  return (gc_handle_linkage_section (scan, object, tctx));
 }
 
 static
@@ -437,7 +437,7 @@ DEFINE_GC_HANDLER (handle_broken_heart)
   return
     (((OBJECT_DATUM (object)) == 0)
      ? (scan + 1)
-     : (gc_handle_broken_heart (scan, object)));
+     : (gc_handle_broken_heart (scan, object, tctx)));
 }
 
 static
@@ -445,7 +445,7 @@ DEFINE_GC_HANDLER (handle_environment)
 {
   if (current_env_mode != FE_DUMP)
     signal_error_from_primitive (ERR_FASDUMP_ENVIRONMENT, current_tctx ());
-  (*scan) = (GC_HANDLE_VECTOR (object, false));
+  (*scan) = (GC_HANDLE_VECTOR (object, false, tctx));
   return (scan + 1);
 }
 
@@ -455,7 +455,7 @@ DEFINE_GC_HANDLER (handle_ephemeron)
   /* Count each one once by counting only if there is no borken heart.  */
   if (0 == (GC_PRECHECK_FROM (OBJECT_ADDRESS (object))))
     dumped_ephemeron_count += 1;
-  return (gc_handle_unaligned_vector (scan, object));
+  return (gc_handle_unaligned_vector (scan, object, tctx));
 }
 
 typedef struct

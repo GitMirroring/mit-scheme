@@ -59,7 +59,7 @@ obstack_chunk_alloc (size_t size)
     {
       outf_fatal ("\n%s: unable to allocate obstack chunk of %d bytes\n",
 		  scheme_program_name, ((int) size));
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, current_tctx ());
     }
   return (result);
 }
@@ -102,12 +102,12 @@ main_name (int argc, const char ** argv)
   setup_memory ((BLOCKS_TO_WORDS (option_heap_size)),
 		stack_size,
 		(BLOCKS_TO_WORDS (option_constant_size)));
-  tctx_t* ic = initialize_tctx (stack_size, memory_block_start);
+  tctx_t* tctx = initialize_tctx (stack_size, memory_block_start);
 
   initialize_primitives ();
   compiler_initialize (option_fasl_file != 0);
   OS_initialize ();
-  start_scheme (ic);
+  start_scheme (tctx);
   termination_init_error ();
   return (0);
 }
@@ -119,7 +119,7 @@ main_name (int argc, const char ** argv)
 #endif
 
 static void
-start_scheme (tctx_t* ic)
+start_scheme (tctx_t* tctx)
 {
   SCHEME_OBJECT expr;
 
@@ -166,7 +166,7 @@ start_scheme (tctx_t* ic)
 
   INITIALIZE_INTERRUPTS (0);
 
-  sstack_t* s = tctx_stack (ic);
+  sstack_t* s = tctx_stack (tctx);
   stack_check (CONTINUATION_SIZE, s);
   push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, s);
   trapping = false;
@@ -178,23 +178,23 @@ start_scheme (tctx_t* ic)
       termination_init_error ();
     }
   ENTRY_HOOK ();
-  Enter_Interpreter (expr, THE_GLOBAL_ENV, ic);
+  Enter_Interpreter (expr, THE_GLOBAL_ENV, tctx);
 }
 
 static void
-Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* ic)
+Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  Interpret (exp, env, ic);
+  Interpret (exp, env, tctx);
   outf_fatal ("\nThe interpreter returned to top level!\n");
-  Microcode_Termination (TERM_EXIT);
+  Microcode_Termination (TERM_EXIT, tctx);
 }
 
 /* This must be used with care, and only synchronously. */
 SCHEME_OBJECT
-Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* ic)
+Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  Interpret (exp, env, ic);
-  return get_single_val (ic);
+  Interpret (exp, env, tctx);
+  return get_single_val (tctx);
 }
 
 /* Utility primitives. */

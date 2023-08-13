@@ -118,19 +118,22 @@ DEFINE_PRIMITIVE ("VECTOR-CONS", Prim_vector_cons, 2, 2, 0)
     (make_vector ((arg_nonnegative_integer (1)), (ARG_REF (2)), true));
 }
 
+static SCHEME_OBJECT
+vector_like (unsigned long type, unsigned long nargs)
+{
+  SCHEME_OBJECT result = (allocate_marked_vector (type, nargs, true));
+  SCHEME_OBJECT* args_scan = ARG_LOC (1);
+  SCHEME_OBJECT* args_end = ARG_LOC (nargs + 1);
+  SCHEME_OBJECT* result_scan = VECTOR_LOC (result, 0);
+  while (args_scan < args_end)
+    *result_scan++ = *args_scan++;
+  return result;
+}
+
 DEFINE_PRIMITIVE ("VECTOR", Prim_vector, 0, LEXPR, 0)
 {
   PRIMITIVE_HEADER (LEXPR);
-  {
-    SCHEME_OBJECT result =
-      (allocate_marked_vector (TC_VECTOR, GET_LEXPR_ACTUALS, true));
-    SCHEME_OBJECT * argument_scan = (ARG_LOC (1));
-    SCHEME_OBJECT * argument_limit = (ARG_LOC (GET_LEXPR_ACTUALS + 1));
-    SCHEME_OBJECT * result_scan = (VECTOR_LOC (result, 0));
-    while (argument_scan != argument_limit)
-      (*result_scan++) = (STACK_LOCATIVE_POP (argument_scan));
-    PRIMITIVE_RETURN (result);
-  }
+  PRIMITIVE_RETURN (vector_like (TC_VECTOR, primitive_lexpr_actuals (tctx)));
 }
 
 DEFINE_PRIMITIVE ("%MAKE-RECORD", Prim_make_record, 2, 2, 0)
@@ -138,28 +141,18 @@ DEFINE_PRIMITIVE ("%MAKE-RECORD", Prim_make_record, 2, 2, 0)
   PRIMITIVE_HEADER (2);
   PRIMITIVE_RETURN
     (make_marked_vector (TC_RECORD,
-			 (arg_ulong_index_integer (1, (1UL << DATUM_LENGTH))),
-			 (ARG_REF (2)),
+			 arg_ulong_index_integer (1, (1UL << DATUM_LENGTH)),
+			 ARG_REF (2),
 			 true));
 }
 
 DEFINE_PRIMITIVE ("%RECORD", Prim_record, 0, LEXPR, 0)
 {
   PRIMITIVE_HEADER (LEXPR);
-  {
-    unsigned long nargs = GET_LEXPR_ACTUALS;
-    if (nargs < 1)
-      signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS);
-    {
-      SCHEME_OBJECT result = (allocate_marked_vector (TC_RECORD, nargs, true));
-      SCHEME_OBJECT * argument_scan = (ARG_LOC (1));
-      SCHEME_OBJECT * argument_limit = (ARG_LOC (nargs + 1));
-      SCHEME_OBJECT * result_scan = (VECTOR_LOC (result, 0));
-      while (argument_scan != argument_limit)
-	(*result_scan++) = (STACK_LOCATIVE_POP (argument_scan));
-      PRIMITIVE_RETURN (result);
-    }
-  }
+  unsigned long nargs = primitive_lexpr_actuals (tctx);
+  if (nargs < 1)
+    signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS, tctx);
+  PRIMITIVE_RETURN (vector_like (TC_RECORD, nargs));
 }
 
 DEFINE_PRIMITIVE ("VECTOR?", Prim_vector_p, 1, 1, 0)

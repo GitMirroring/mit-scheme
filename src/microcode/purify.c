@@ -95,7 +95,7 @@ purify (SCHEME_OBJECT object, tctx_t* tctx)
   add_to_tospace (object);
 
   current_gc_table = std_gc_table ();
-  gc_scan_tospace (start_copy, 0);
+  gc_scan_tospace (start_copy, 0, tctx);
 
   SCHEME_OBJECT* new_constant_alloc_next = get_newspace_ptr ();
   increment_tospace_ptr (CONSTANT_SPACE_FUDGE);

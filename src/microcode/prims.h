@@ -66,24 +66,24 @@ primitive_reduce (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 
 extern void signal_error_from_primitive (long, tctx_t*) NORETURN;
 extern void signal_interrupt_from_primitive (tctx_t*) NORETURN;
-extern void error_wrong_type_arg (int) NORETURN;
-extern void error_bad_range_arg (int) NORETURN;
+extern void error_wrong_type_arg (unsigned int) NORETURN;
+extern void error_bad_range_arg (unsigned int) NORETURN;
 extern void error_external_return (void) NORETURN;
 extern void error_with_argument (SCHEME_OBJECT) NORETURN;
-extern long arg_integer (int);
-extern intmax_t arg_integer_to_intmax (int);
-extern long arg_nonnegative_integer (int);
-extern long arg_index_integer (int, long);
-extern intmax_t arg_index_integer_to_intmax (int, intmax_t);
-extern long arg_integer_in_range (int, long, long);
-extern unsigned long arg_ulong_integer (int);
-extern unsigned long arg_ulong_index_integer (int, unsigned long);
+extern long arg_integer (unsigned int);
+extern intmax_t arg_integer_to_intmax (unsigned int);
+extern long arg_nonnegative_integer (unsigned int);
+extern long arg_index_integer (unsigned int, long);
+extern intmax_t arg_index_integer_to_intmax (unsigned int, intmax_t);
+extern long arg_integer_in_range (unsigned int, long, long);
+extern unsigned long arg_ulong_integer (unsigned int);
+extern unsigned long arg_ulong_index_integer (unsigned int, unsigned long);
 extern unsigned long arg_ulong_integer_in_range
-  (int, unsigned long, unsigned long);
-extern double arg_real_number (int);
-extern double arg_real_in_range (int, double, double);
-extern long arg_ascii_char (int);
-extern long arg_ascii_integer (int);
+  (unsigned int, unsigned long, unsigned long);
+extern double arg_real_number (unsigned int);
+extern double arg_real_in_range (unsigned int, double, double);
+extern long arg_ascii_char (unsigned int);
+extern long arg_ascii_integer (unsigned int);
 
 /* Various utilities */
 
@@ -95,12 +95,12 @@ primitive_gc (unsigned long amount, tctx_t* tctx)
     {
       outf_fatal
         ("\nMicrocode requested primitive GC outside primitive!\n");
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
   if (Free < Free_primitive)
     {
       outf_fatal ("\nFree has gone backwards!\n");
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
   REQUEST_GC (amount + (Free - Free_primitive));
   signal_interrupt_from_primitive (tctx);

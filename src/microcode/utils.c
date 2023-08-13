@@ -37,7 +37,7 @@ SCHEME_OBJECT * history_register;
 unsigned long prev_restore_history_offset;
 
 static SCHEME_OBJECT copy_history (SCHEME_OBJECT);
-static void error_death (long, const char *) NORETURN;
+static void error_death (long, const char*, tctx_t*) NORETURN;
 
 /* Helper procedures for setup_interrupt, which follows. */
 
@@ -75,13 +75,13 @@ compute_interrupt_handler_mask (SCHEME_OBJECT interrupt_masks,
 }
 
 static void
-terminate_no_interrupt_handler (unsigned long masked_interrupts)
+terminate_no_interrupt_handler (unsigned long masked_interrupts, tctx_t* tctx)
 {
   outf_fatal ("\nInterrupts = %#08lx, Mask = %#08lx, Masked = %#08lx\n",
 	      GET_INT_CODE,
 	      GET_INT_MASK,
 	      masked_interrupts);
-  Microcode_Termination (TERM_NO_INTERRUPT_HANDLER);
+  Microcode_Termination (TERM_NO_INTERRUPT_HANDLER, tctx);
 }
 
 SCHEME_OBJECT
@@ -114,7 +114,7 @@ setup_interrupt (unsigned long masked_interrupts, tctx_t* tctx)
   if (!VECTOR_P (fixed_objects))
     {
       outf_fatal ("\nInvalid fixed-objects vector");
-      terminate_no_interrupt_handler (masked_interrupts);
+      terminate_no_interrupt_handler (masked_interrupts, tctx);
     }
   unsigned long interrupt_number
     = compute_interrupt_number (masked_interrupts);
@@ -126,7 +126,7 @@ setup_interrupt (unsigned long masked_interrupts, tctx_t* tctx)
 	 && interrupt_number < VECTOR_LENGTH (interrupt_handlers)))
     {
       outf_fatal ("\nUnable to get interrupt handler.");
-      terminate_no_interrupt_handler (masked_interrupts);
+      terminate_no_interrupt_handler (masked_interrupts, tctx);
     }
   unsigned long interrupt_mask
     = compute_interrupt_handler_mask (interrupt_masks, interrupt_number);
@@ -169,14 +169,14 @@ err_print (long error_code, outf_channel where)
 long death_blow;
 
 static void
-error_death (long code, const char * message)
+error_death (long code, const char* message, tctx_t* tctx)
 {
   death_blow = code;
   outf_fatal ("\nMicrocode Error: %s.\n", message);
   err_print (code, FATAL_OUTPUT);
   outf_error ("\n**** Stack Trace ****\n\n");
-  Back_Trace (ERROR_OUTPUT, stack_pointer (current_stack ()));
-  termination_no_error_handler ();
+  Back_Trace (ERROR_OUTPUT, stack_pointer (tctx_stack (tctx)));
+  termination_no_error_handler (tctx);
   /*NOTREACHED*/
 }
 
@@ -184,7 +184,7 @@ void
 Stack_Death (tctx_t* tctx)
 {
   outf_fatal("\nWill_Push vs. Pushed inconsistency.\n");
-  Microcode_Termination (TERM_BAD_STACK);
+  Microcode_Termination (TERM_BAD_STACK, tctx);
   /*NOTREACHED*/
 }
 
@@ -264,7 +264,7 @@ signal_interrupt_from_primitive (tctx_t* tctx)
 }
 
 void
-error_wrong_type_arg (int n)
+error_wrong_type_arg (unsigned int n)
 {
   long error_code;
 
@@ -286,7 +286,7 @@ error_wrong_type_arg (int n)
 }
 
 void
-error_bad_range_arg (int n)
+error_bad_range_arg (unsigned int n)
 {
   long error_code;
 
@@ -352,7 +352,7 @@ error_system_call (int code, enum syscall_names name)
 }
 
 long
-arg_integer (int arg_number)
+arg_integer (unsigned int arg_number)
 {
   SCHEME_OBJECT object = (ARG_REF (arg_number));
   if (! (INTEGER_P (object)))
@@ -363,7 +363,7 @@ arg_integer (int arg_number)
 }
 
 intmax_t
-arg_integer_to_intmax (int arg_number)
+arg_integer_to_intmax (unsigned int arg_number)
 {
   SCHEME_OBJECT object = (ARG_REF (arg_number));
   if (! (INTEGER_P (object)))
@@ -374,7 +374,7 @@ arg_integer_to_intmax (int arg_number)
 }
 
 long
-arg_nonnegative_integer (int arg_number)
+arg_nonnegative_integer (unsigned int arg_number)
 {
   long result = (arg_integer (arg_number));
   if (result < 0)
@@ -383,7 +383,7 @@ arg_nonnegative_integer (int arg_number)
 }
 
 long
-arg_index_integer (int arg_number, long upper_limit)
+arg_index_integer (unsigned int arg_number, long upper_limit)
 {
   long result = (arg_integer (arg_number));
   if ((result < 0) || (result >= upper_limit))
@@ -392,7 +392,7 @@ arg_index_integer (int arg_number, long upper_limit)
 }
 
 intmax_t
-arg_index_integer_to_intmax (int arg_number, intmax_t upper_limit)
+arg_index_integer_to_intmax (unsigned int arg_number, intmax_t upper_limit)
 {
   intmax_t result = (arg_integer_to_intmax (arg_number));
   if ((result < 0) || (result >= upper_limit))
@@ -401,7 +401,8 @@ arg_index_integer_to_intmax (int arg_number, intmax_t upper_limit)
 }
 
 long
-arg_integer_in_range (int arg_number, long lower_limit, long upper_limit)
+arg_integer_in_range (unsigned int arg_number, long lower_limit,
+                      long upper_limit)
 {
   long result = (arg_integer (arg_number));
   if ((result < lower_limit) || (result >= upper_limit))
@@ -410,7 +411,7 @@ arg_integer_in_range (int arg_number, long lower_limit, long upper_limit)
 }
 
 unsigned long
-arg_ulong_integer (int arg_number)
+arg_ulong_integer (unsigned int arg_number)
 {
   SCHEME_OBJECT object = (ARG_REF (arg_number));
   if (! (INTEGER_P (object)))
@@ -421,7 +422,7 @@ arg_ulong_integer (int arg_number)
 }
 
 unsigned long
-arg_ulong_index_integer (int arg_number, unsigned long upper_limit)
+arg_ulong_index_integer (unsigned int arg_number, unsigned long upper_limit)
 {
   unsigned long result = (arg_ulong_integer (arg_number));
   if (result >= upper_limit)
@@ -430,7 +431,7 @@ arg_ulong_index_integer (int arg_number, unsigned long upper_limit)
 }
 
 unsigned long
-arg_ulong_integer_in_range (int arg_number,
+arg_ulong_integer_in_range (unsigned int arg_number,
 			    unsigned long lower_limit,
 			    unsigned long upper_limit)
 {
@@ -463,7 +464,7 @@ real_number_to_double (SCHEME_OBJECT x)
 }
 
 double
-arg_real_number (int arg_number)
+arg_real_number (unsigned int arg_number)
 {
   SCHEME_OBJECT number = (ARG_REF (arg_number));
   if (! (REAL_P (number)))
@@ -474,7 +475,8 @@ arg_real_number (int arg_number)
 }
 
 double
-arg_real_in_range (int arg_number, double lower_limit, double upper_limit)
+arg_real_in_range (unsigned int arg_number, double lower_limit,
+                   double upper_limit)
 {
   double result = (arg_real_number (arg_number));
   if ((result < lower_limit) || (result > upper_limit))
@@ -731,13 +733,13 @@ Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
         ? VECTOR_REF (fixed_objects, SYSTEM_ERROR_VECTOR)
         : SHARP_F;
     if (!VECTOR_P (error_vector))
-      error_death (error_code, "No error handlers");
+      error_death (error_code, "No error handlers", tctx);
     if (error_code >= 0 && error_code < (VECTOR_LENGTH (error_vector)))
       handler = VECTOR_REF (error_vector, error_code);
     else if (ERR_BAD_ERROR_CODE < VECTOR_LENGTH (error_vector))
       handler = VECTOR_REF (error_vector, ERR_BAD_ERROR_CODE);
     else
-      error_death (error_code, "No error handlers");
+      error_death (error_code, "No error handlers", tctx);
   }
 
   /* Return from error handler will re-enable interrupts & restore history */
@@ -1081,15 +1083,3 @@ C_call_scheme (SCHEME_OBJECT proc,
 }
 
 #endif /* __WIN32__ */
-
-void
-set_ptr_register (unsigned int index, SCHEME_OBJECT * p)
-{
-  (Registers[index]) = ((SCHEME_OBJECT) p);
-}
-
-void
-set_ulong_register (unsigned int index, unsigned long value)
-{
-  (Registers[index]) = ((SCHEME_OBJECT) value);
-}

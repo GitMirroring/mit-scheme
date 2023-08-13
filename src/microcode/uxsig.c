@@ -824,7 +824,7 @@ interactive_interrupt_handler (SIGCONTEXT_T * scp)
 	case 'Q':
 	case 'q':
 	  INTERACTIVE_NEWLINE ();
-	  termination_normal (0);
+	  termination_normal (0, current_tctx ());
 	  return;
 	case '\f':
 	  if (!option_emacs_subprocess)
@@ -855,7 +855,7 @@ interactive_interrupt_handler (SIGCONTEXT_T * scp)
 	  {
 	    /* IO problems, assume everything scrod. */
 	    fprintf (stderr, "Problems reading keyboard input -- Exitting.\n");
-	    termination_eof ();
+	    termination_eof (current_tctx ());
 	  }
 	  FALLTHROUGH ();
 	default:
@@ -1077,7 +1077,7 @@ reset_query (SIGCONTEXT_T * scp)
 	case '\0':
 	  /* IO problems, assume everything scrod. */
 	  fprintf (stderr, "Problems reading keyboard input -- exitting.\n");
-	  termination_eof ();
+	  termination_eof (current_tctx ());
 	case 'D':
 	  SET_CRITICAL_SECTION_HOOK (invoke_soft_reset);
 	  return;
@@ -1142,7 +1142,7 @@ examine_memory (void)
       == USERIO_READ_LINE_INPUT_FAILED)
   {
     fprintf (stderr, "Problems reading keyboard input -- exiting.\n");
-    termination_eof ();
+    termination_eof (current_tctx ());
   }
   {
     long input;
@@ -1173,7 +1173,7 @@ interactive_back_trace (void)
       == USERIO_READ_LINE_INPUT_FAILED)
   {
     fprintf (stderr, "Problems reading keyboard input -- exiting.\n");
-    termination_eof ();
+    termination_eof (current_tctx ());
   }
   INTERACTIVE_NEWLINE ();
   if ((strlen (&input_string[0])) == 0)

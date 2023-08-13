@@ -264,7 +264,7 @@ eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
       return eval_assignment (exp, env, tctx);
 
     case TC_BROKEN_HEART:
-      Microcode_Termination (TERM_BROKEN_HEART);
+      Microcode_Termination (TERM_BROKEN_HEART, tctx);
 
     case TC_COMBINATION:
       return eval_combination (exp, env, tctx);
@@ -472,7 +472,7 @@ cont_hardware_trap (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
   if (handler == SHARP_F)
     {
       outf_fatal ("There is no trap handler for recovery!\n");
-      termination_trap ();
+      termination_trap (tctx);
       /*NOTREACHED*/
     }
   stack_check ((STACK_ENV_EXTRA_SLOTS + 2), tctx_stack (tctx));
@@ -506,7 +506,7 @@ cont_internal_apply_val (tctx_t* tctx)
 static inline int_action_t
 cont_join_stacklets (SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  unpack_control_point (exp, tctx_stack (tctx));
+  unpack_control_point (exp, tctx);
   return INT_ACTION_APPLY_CONT;
 }
 
@@ -515,7 +515,7 @@ cont_normal_gc_done (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
   /* Paranoia */
   if (GC_NEEDED_P (gc_space_needed))
-    termination_gc_out_of_space ();
+    termination_gc_out_of_space (tctx);
   gc_space_needed = 0;
   EXIT_CRITICAL_SECTION ({ push_cont (ret, exp, tctx_stack (tctx)); });
   return single_val (exp, tctx);
@@ -623,7 +623,7 @@ apply_cont (tctx_t* tctx)
 {
   sstack_t* s = tctx_stack (tctx);
   if (!RETURN_CODE_P (stack_ref (0, s)))
-    Microcode_Termination (TERM_BAD_STACK);
+    Microcode_Termination (TERM_BAD_STACK, tctx);
 
   SCHEME_OBJECT ret = stack_pop (s);
   SCHEME_OBJECT exp = stack_pop (s);
@@ -648,7 +648,7 @@ apply_cont (tctx_t* tctx)
     case RC_EXECUTE_DEFINITION_FINISH:
       return cont_definition_finish (ret, exp, tctx);
     case RC_HALT:
-      Microcode_Termination (TERM_TERM_HANDLER);
+      Microcode_Termination (TERM_TERM_HANDLER, tctx);
     case RC_HARDWARE_TRAP:
       return cont_hardware_trap (ret, exp, tctx);
     case RC_INTERNAL_APPLY:
@@ -738,7 +738,7 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
     {
       outf_fatal ("\nPrimitive slipped the dynamic stack: %s\n",
 		  PRIMITIVE_NAME (proc));
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
   set_primitive (SHARP_F, tctx);
   set_primitive_free (0, tctx);
@@ -871,7 +871,7 @@ apply_control_point (SCHEME_OBJECT proc, tctx_t* tctx)
       return INT_ACTION_APPLY_PROC;
     }
   SCHEME_OBJECT val = apply_frame_first_arg (s);
-  unpack_control_point (proc, s);
+  unpack_control_point (proc, tctx);
   reset_history (tctx);
   return single_val (val, tctx);
 }

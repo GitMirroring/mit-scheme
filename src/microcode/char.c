@@ -32,7 +32,7 @@ USA.
 #include <ctype.h>
 
 long
-arg_ascii_char (int n)
+arg_ascii_char (unsigned int n)
 {
   CHECK_ARG (n, CHARACTER_P);
   {
@@ -44,7 +44,7 @@ arg_ascii_char (int n)
 }
 
 long
-arg_ascii_integer (int n)
+arg_ascii_integer (unsigned int n)
 {
   return (arg_index_integer (n, MAX_ASCII));
 }

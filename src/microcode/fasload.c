@@ -56,25 +56,26 @@ static SCHEME_OBJECT * new_prim_table;
 
 struct load_band_termination_state
 {
-  const char * file_name;
+  const char* file_name;
   bool no_return_p;
+  tctx_t* tctx;
 };
 
 typedef void (*cleanup_t) (void);
 
-static const char * reload_band_name = 0;
+static const char* reload_band_name = 0;
 static Tptrvec reload_cleanups = 0;
 static unsigned long reload_heap_size = 0;
 static unsigned long reload_constant_size = 0;
 
-static void init_fasl_file (const char *, bool, fasl_file_handle_t *);
-static void close_fasl_file (void *);
+static void init_fasl_file (const char*, bool, fasl_file_handle_t*, tctx_t*);
+static void close_fasl_file (void*);
 
 static SCHEME_OBJECT load_file (fasl_file_handle_t, unsigned long, tctx_t*);
-static void * read_from_file (void *, size_t, fasl_file_handle_t);
-static bool primitive_numbers_unchanged_p (SCHEME_OBJECT *);
+static void* read_from_file (void*, size_t, fasl_file_handle_t, tctx_t*);
+static bool primitive_numbers_unchanged_p (SCHEME_OBJECT*);
 
-static gc_table_t * relocate_block_table (void);
+static gc_table_t* relocate_block_table (void);
 static gc_handler_t handle_primitive;
 static gc_tuple_handler_t fasload_tuple;
 static gc_vector_handler_t fasload_vector;
@@ -82,16 +83,16 @@ static gc_object_handler_t fasload_cc_entry;
 static gc_object_handler_t fasload_cc_return;
 static gc_raw_address_to_object_t fasload_raw_address_to_object;
 static gc_raw_address_to_cc_entry_t fasload_raw_address_to_cc_entry;
-static void * relocate_address (void *);
+static void* relocate_address (void*, tctx_t*);
 
-static gc_table_t * intern_block_table (void);
+static gc_table_t* intern_block_table (void);
 static gc_handler_t intern_handle_symbol;
 static gc_tuple_handler_t intern_tuple;
 static gc_vector_handler_t intern_vector;
 static gc_object_handler_t intern_cc_entry;
 
-static SCHEME_OBJECT read_band_file (SCHEME_OBJECT);
-static void terminate_band_load (void *);
+static SCHEME_OBJECT read_band_file (SCHEME_OBJECT, tctx_t*);
+static void terminate_band_load (void*);
 
 DEFINE_PRIMITIVE ("BINARY-FASLOAD", Prim_binary_fasload, 1, 1, "(NAMESTRING)\n\
 Load the contents of the file NAMESTRING into memory.  The file was\n\
@@ -110,7 +111,7 @@ that was dumped.")
   canonicalize_primitive_context (tctx);
   transaction_begin ();
 
-  init_fasl_file ((STRING_ARG (1)), false, (&handle));
+  init_fasl_file ((STRING_ARG (1)), false, (&handle), tctx);
   if ((FASLHDR_CONSTANT_SIZE (fh)) > 0)
     signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG, tctx);
 
@@ -139,8 +140,8 @@ that was dumped.")
 }
 
 static void
-init_fasl_file (const char * file_name, bool band_p,
-		fasl_file_handle_t * handle)
+init_fasl_file (const char* file_name, bool band_p,
+		fasl_file_handle_t* handle, tctx_t* tctx)
 {
   if (!open_fasl_input_file (file_name, handle))
     error_bad_range_arg (1);
@@ -148,7 +149,7 @@ init_fasl_file (const char * file_name, bool band_p,
 
   fh = (&fasl_header);
   if (!read_fasl_header (fh, (*handle)))
-    signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA);
+    signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA, tctx);
 
 #ifndef INHIBIT_FASL_VERSION_CHECK
   if ((check_fasl_version (fh)) != FASL_FILE_FINE)
@@ -162,7 +163,7 @@ init_fasl_file (const char * file_name, bool band_p,
 	 OLDEST_INPUT_FASL_VERSION,
 	 NEWEST_INPUT_FASL_VERSION,
 	 CURRENT_FASL_ARCH);
-      signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA);
+      signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA, tctx);
     }
 #endif
 
@@ -179,18 +180,18 @@ init_fasl_file (const char * file_name, bool band_p,
       outf_error
 	("Expected: compiled-code interface %u; architecture %u.\n",
 	 compiler_interface_version, compiler_processor_type);
-      signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH);
+      signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH, tctx);
     }
 #endif
 
   if ((FASLHDR_BAND_P (fh)) != band_p)
-    signal_error_from_primitive (ERR_FASLOAD_BAND);
+    signal_error_from_primitive (ERR_FASLOAD_BAND, tctx);
 }
 
 static void
-close_fasl_file (void * p)
+close_fasl_file (void* p)
 {
-  (void) close_fasl_input_file (* ((fasl_file_handle_t *) p));
+  (void) close_fasl_input_file (* ((fasl_file_handle_t*) p));
 }
 
 DEFINE_PRIMITIVE ("LOAD-BAND", Prim_band_load, 1, 1, "(NAMESTRING)\n\
@@ -202,7 +203,7 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
 
   CHECK_ARG (1, STRING_P);
   canonicalize_primitive_context (tctx);
-  SCHEME_OBJECT result = (read_band_file (ARG_REF (1)));
+  SCHEME_OBJECT result = (read_band_file (ARG_REF (1), tctx));
 
   /* Reset implementation state parameters.  */
   INITIALIZE_INTERRUPTS (0);
@@ -236,23 +237,20 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
 }
 
 static SCHEME_OBJECT
-read_band_file (SCHEME_OBJECT s)
+read_band_file (SCHEME_OBJECT s, tctx_t* tctx)
 {
-  const char * file_name;
-  struct load_band_termination_state * state;
-  fasl_file_handle_t handle;
-  SCHEME_OBJECT result;
-  void * old_name;
-
   transaction_begin ();
-  file_name = (OS_malloc ((STRING_LENGTH (s)) + 1));
-  strcpy (((char *) file_name), (STRING_POINTER (s)));
-  state = (dstack_alloc (sizeof (struct load_band_termination_state)));
-  (state->file_name) = file_name;
-  (state->no_return_p) = false;
+  const char* file_name = OS_malloc (STRING_LENGTH (s) + 1);
+  strcpy (((char*) file_name), (STRING_POINTER (s)));
+  struct load_band_termination_state* state
+    = dstack_alloc (sizeof (struct load_band_termination_state));
+  state->file_name = file_name;
+  state->no_return_p = false;
+  state->tctx = tctx;
   transaction_record_action (tat_abort, terminate_band_load, state);
 
-  init_fasl_file (file_name, true, (&handle));
+  fasl_file_handle_t handle;
+  init_fasl_file (file_name, true, (&handle), tctx);
   if (!allocations_ok_p
       ((FASLHDR_CONSTANT_SIZE (fh)),
        ((REQUIRED_HEAP (fh))
@@ -260,7 +258,7 @@ read_band_file (SCHEME_OBJECT s)
 	   ? (compute_extra_ephemeron_space (FASLHDR_EPHEMERON_COUNT (fh)))
 	   : 0)),
        (FASLHDR_HEAP_RESERVED (fh))))
-    signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG);
+    signal_error_from_primitive (ERR_FASL_FILE_TOO_BIG, tctx);
 
   /* Now read the file into memory.  Past this point we can't abort
      and return to the old image.  */
@@ -271,13 +269,13 @@ read_band_file (SCHEME_OBJECT s)
     ((FASLHDR_CONSTANT_SIZE (fh)), (FASLHDR_HEAP_RESERVED (fh)));
   /* We cleared the heap; the ephemeron array is now bogus.  */
   ephemeron_array = SHARP_F;
-  result = (load_file (handle, 0, default_tctx ()));
+  SCHEME_OBJECT result = (load_file (handle, 0, tctx));
 
   /* Done -- we have the new image.  */
   transaction_commit ();
 
   /* Save the band name for possible later use.  */
-  old_name = ((void *) reload_band_name);
+  void* old_name = (void*) reload_band_name;
   reload_band_name = file_name;
   if (old_name != 0)
     OS_free (old_name);
@@ -286,21 +284,21 @@ read_band_file (SCHEME_OBJECT s)
 }
 
 static void
-terminate_band_load (void * ap)
+terminate_band_load (void* ap)
 {
   struct load_band_termination_state* state = ap;
   if (! (state->no_return_p))
     {
-      OS_free ((void *) (state->file_name));
+      OS_free ((void*) (state->file_name));
       return;
     }
 
-  int abort_value = (abort_to_interpreter_argument (current_tctx ()));
+  int abort_value = (abort_to_interpreter_argument (state->tctx));
 
   fputs ("\nload-band: ", stderr);
   if (abort_value > 0)
     {
-      const char * message
+      const char* message
 	= ((abort_value <= MAX_ERROR)
 	   ? (Error_Names[abort_value])
 	   : 0);
@@ -316,11 +314,11 @@ terminate_band_load (void * ap)
     }
   outf_fatal (" past the point of no return.\n");
   outf_fatal ("file name = \"%s\".\n", (state->file_name));
-  OS_free ((void *) (state->file_name));
+  OS_free ((void*) (state->file_name));
 
   execute_reload_cleanups ();
   EXIT_CRITICAL_SECTION ({});
-  Microcode_Termination (TERM_DISK_RESTORE);
+  Microcode_Termination (TERM_DISK_RESTORE, state->tctx);
   /*NOTREACHED*/
 }
 
@@ -338,7 +336,7 @@ The result is a string, or #F if the system was not restored.")
 }
 
 void
-get_band_parameters (unsigned long * heap_size, unsigned long * const_size)
+get_band_parameters (unsigned long* heap_size, unsigned long* const_size)
 {
   (*heap_size) = reload_heap_size;
   (*const_size) = reload_constant_size;
@@ -350,7 +348,7 @@ add_reload_cleanup (cleanup_t cleanup_procedure)
   if (reload_cleanups == 0)
     {
       reload_cleanups = (ptrvec_allocate (1));
-      (* ((cleanup_t *) (PTRVEC_LOC (reload_cleanups, 0))))
+      (* ((cleanup_t*) (PTRVEC_LOC (reload_cleanups, 0))))
 	= cleanup_procedure;
     }
   else
@@ -360,10 +358,10 @@ add_reload_cleanup (cleanup_t cleanup_procedure)
 void
 execute_reload_cleanups (void)
 {
-  void ** scan = (PTRVEC_START (reload_cleanups));
-  void ** end = (PTRVEC_END (reload_cleanups));
+  void** scan = (PTRVEC_START (reload_cleanups));
+  void** end = (PTRVEC_END (reload_cleanups));
   while (scan < end)
-    (* ((cleanup_t *) (scan++))) ();
+    (* ((cleanup_t*) (scan++))) ();
 }
 
 static SCHEME_OBJECT
@@ -380,20 +378,22 @@ load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
        ? 0
        : (OBJECT_ADDRESS (compiler_utilities)));
 
-  Free = (read_from_file (Free, (FASLHDR_HEAP_SIZE (fh)), handle));
+  Free = (read_from_file (Free, FASLHDR_HEAP_SIZE (fh), handle, tctx));
   constant_alloc_next
     = (read_from_file (constant_alloc_next,
-		       (FASLHDR_CONSTANT_SIZE (fh)),
-		       handle));
+		       FASLHDR_CONSTANT_SIZE (fh),
+		       handle,
+                       tctx));
 
   new_prim_table = Free;
   {
-    SCHEME_OBJECT * raw_prim_table = (Free + (FASLHDR_N_PRIMITIVES (fh)));
+    SCHEME_OBJECT* raw_prim_table = Free + FASLHDR_N_PRIMITIVES (fh);
     read_from_file (raw_prim_table,
-		    (FASLHDR_PRIMITIVE_TABLE_SIZE (fh)),
-		    handle);
+		    FASLHDR_PRIMITIVE_TABLE_SIZE (fh),
+		    handle,
+                    tctx);
     import_primitive_table
-      (raw_prim_table, (FASLHDR_N_PRIMITIVES (fh)), new_prim_table);
+      (raw_prim_table, FASLHDR_N_PRIMITIVES (fh), new_prim_table, tctx);
   }
 #ifdef CC_IS_C
   if (FASLHDR_BAND_P (fh))
@@ -401,7 +401,7 @@ load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
       reset_c_code_table ();
       if ((FASLHDR_C_CODE_TABLE_SIZE (fh)) > 0)
 	{
-	  SCHEME_OBJECT * raw_table = (Free + (FASLHDR_N_PRIMITIVES (fh)));
+	  SCHEME_OBJECT* raw_table = (Free + (FASLHDR_N_PRIMITIVES (fh)));
 	  read_from_file (raw_table, (FASLHDR_C_CODE_TABLE_SIZE (fh)), handle);
 	  if (!import_c_code_table (raw_table, (FASLHDR_N_C_CODE_BLOCKS (fh))))
 	    signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH);
@@ -414,7 +414,7 @@ load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
       && (compiler_utilities == SHARP_F))
     /* The file contains compiled code, but there's no compiled-code
        support available.  */
-    signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH);
+    signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH, tctx);
 
   if (! ((FASLHDR_BAND_P (fh))
 	 && ((FASLHDR_HEAP_START (fh)) == new_heap_start)
@@ -429,14 +429,14 @@ load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
 	 && (primitive_numbers_unchanged_p (new_prim_table))))
     {
       current_gc_table = (relocate_block_table ());
-      gc_scan_oldspace (new_heap_start, Free);
-      gc_scan_oldspace (new_constant_start, constant_alloc_next);
+      gc_scan_oldspace (new_heap_start, Free, tctx);
+      gc_scan_oldspace (new_constant_start, constant_alloc_next, tctx);
     }
   if (!FASLHDR_BAND_P (fh))
     {
       current_gc_table = (intern_block_table ());
-      gc_scan_oldspace (new_heap_start, Free);
-      gc_scan_oldspace (new_constant_start, constant_alloc_next);
+      gc_scan_oldspace (new_heap_start, Free, tctx);
+      gc_scan_oldspace (new_constant_start, constant_alloc_next, tctx);
     }
 
 #ifdef PUSH_D_CACHE_REGION
@@ -454,20 +454,21 @@ load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
       (old_ephemeron_count + (FASLHDR_EPHEMERON_COUNT (fh)));
 
   return
-    (* ((SCHEME_OBJECT *)
-	(relocate_address (FASLHDR_ROOT_POINTER (fh)))));
+    (* ((SCHEME_OBJECT*)
+	(relocate_address (FASLHDR_ROOT_POINTER (fh), tctx))));
 }
 
-static void *
-read_from_file (void * p, size_t n_words, fasl_file_handle_t handle)
+static void*
+read_from_file (void* p, size_t n_words, fasl_file_handle_t handle,
+                tctx_t* tctx)
 {
   if (!read_from_fasl_file (p, n_words, handle))
-    signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA);
-  return (((char *) p) + (n_words * SIZEOF_SCHEME_OBJECT));
+    signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA, tctx);
+  return (((char*) p) + (n_words * SIZEOF_SCHEME_OBJECT));
 }
 
 static bool
-primitive_numbers_unchanged_p (SCHEME_OBJECT * table)
+primitive_numbers_unchanged_p (SCHEME_OBJECT* table)
 {
   unsigned long count;
 
@@ -477,7 +478,7 @@ primitive_numbers_unchanged_p (SCHEME_OBJECT * table)
   return (true);
 }
 
-static gc_table_t *
+static gc_table_t*
 relocate_block_table (void)
 {
   static bool initialized_p = false;
@@ -521,32 +522,33 @@ DEFINE_GC_HANDLER (handle_primitive)
 #define OLD_CC_RETURN(object) (fasl_cc_return ((object), (fh)))
 
 static SCHEME_OBJECT
-fasload_raw_address_to_object (unsigned int type, SCHEME_OBJECT * address)
+fasload_raw_address_to_object (unsigned int type, SCHEME_OBJECT* address)
 {
   return (fasl_raw_address_to_object (type, address, fh));
 }
 
 static SCHEME_OBJECT
-fasload_raw_address_to_cc_entry (insn_t * address)
+fasload_raw_address_to_cc_entry (insn_t* address)
 {
   return (fasl_raw_address_to_cc_entry (address, fh));
 }
 
-#define RELOCATE_OBJECT(object)						\
-  (OBJECT_NEW_ADDRESS ((object),					\
-		       ((SCHEME_OBJECT *)				\
-			(relocate_address (OLD_ADDRESS (object))))))
+#define RELOCATE_OBJECT(object, tctx)                                   \
+  (OBJECT_NEW_ADDRESS                                                   \
+     ((object),                                                         \
+      ((SCHEME_OBJECT*)                                                 \
+       (relocate_address (OLD_ADDRESS (object), (tctx))))))
 
 static
 DEFINE_GC_TUPLE_HANDLER (fasload_tuple)
 {
-  return (RELOCATE_OBJECT (tuple));
+  return (RELOCATE_OBJECT (tuple, tctx));
 }
 
 static
 DEFINE_GC_VECTOR_HANDLER (fasload_vector)
 {
-  return (RELOCATE_OBJECT (vector));
+  return (RELOCATE_OBJECT (vector, tctx));
 }
 
 static
@@ -555,7 +557,7 @@ DEFINE_GC_OBJECT_HANDLER (fasload_cc_entry)
 #ifdef CC_SUPPORT_P
   return
     (CC_ENTRY_NEW_ADDRESS (object,
-			   (relocate_address (OLD_CC_ADDRESS (object)))));
+			   (relocate_address (OLD_CC_ADDRESS (object), tctx))));
 #else
   return (object);
 #endif
@@ -567,7 +569,7 @@ DEFINE_GC_OBJECT_HANDLER (fasload_cc_return)
 #ifdef CC_SUPPORT_P
   return
     (CC_RETURN_NEW_ADDRESS (object,
-			    (relocate_address (OLD_CC_RETURN (object)))));
+			    (relocate_address (OLD_CC_RETURN (object), tctx))));
 #else
   return (object);
 #endif
@@ -576,36 +578,36 @@ DEFINE_GC_OBJECT_HANDLER (fasload_cc_return)
 /* Relocate an address as read in from the file.  The address is
    examined to see what region of memory it belongs in.  */
 
-static void *
-relocate_address (void * vaddr)
+static void*
+relocate_address (void* vaddr, tctx_t* tctx)
 {
-  uint8_t * caddr = vaddr;
-  uint8_t * result;
+  uint8_t* caddr = vaddr;
+  uint8_t* result;
 
-  if ((caddr >= ((uint8_t *) (FASLHDR_HEAP_START (fh))))
-      && (caddr < ((uint8_t *) (FASLHDR_HEAP_END (fh)))))
+  if ((caddr >= ((uint8_t*) (FASLHDR_HEAP_START (fh))))
+      && (caddr < ((uint8_t*) (FASLHDR_HEAP_END (fh)))))
     result
-      = (((uint8_t *) new_heap_start)
-	 + (caddr - ((uint8_t *) (FASLHDR_HEAP_START (fh)))));
-  else if ((caddr >= ((uint8_t *) (FASLHDR_CONSTANT_START (fh))))
-	   && (caddr < ((uint8_t *) (FASLHDR_CONSTANT_END (fh)))))
+      = (((uint8_t*) new_heap_start)
+	 + (caddr - ((uint8_t*) (FASLHDR_HEAP_START (fh)))));
+  else if ((caddr >= ((uint8_t*) (FASLHDR_CONSTANT_START (fh))))
+	   && (caddr < ((uint8_t*) (FASLHDR_CONSTANT_END (fh)))))
     result
-      = (((uint8_t *) new_constant_start)
-	 + (caddr - ((uint8_t *) (FASLHDR_CONSTANT_START (fh)))));
-  else if ((caddr >= ((uint8_t *) (FASLHDR_UTILITIES_START (fh))))
-	   && (caddr < ((uint8_t *) (FASLHDR_UTILITIES_END (fh)))))
+      = (((uint8_t*) new_constant_start)
+	 + (caddr - ((uint8_t*) (FASLHDR_CONSTANT_START (fh)))));
+  else if ((caddr >= ((uint8_t*) (FASLHDR_UTILITIES_START (fh))))
+	   && (caddr < ((uint8_t*) (FASLHDR_UTILITIES_END (fh)))))
     result
-      = (((uint8_t *) new_utilities)
-	 + (caddr - ((uint8_t *) (FASLHDR_UTILITIES_START (fh)))));
-  else if (caddr >= (uint8_t *) (FASLHDR_STACK_START (fh))
-           && caddr < (uint8_t *) (FASLHDR_STACK_END (fh)))
+      = (((uint8_t*) new_utilities)
+	 + (caddr - ((uint8_t*) (FASLHDR_UTILITIES_START (fh)))));
+  else if (caddr >= (uint8_t*) (FASLHDR_STACK_START (fh))
+           && caddr < (uint8_t*) (FASLHDR_STACK_END (fh)))
     result
       = (N_PUSHED_TO_SP
 	 ((SP_TO_N_PUSHED (caddr,
-			   ((uint8_t *) (FASLHDR_STACK_START (fh))),
-			   ((uint8_t *) (FASLHDR_STACK_END (fh))))),
-	  ((uint8_t *) new_stack_start),
-	  ((uint8_t *) new_stack_end)));
+			   ((uint8_t*) (FASLHDR_STACK_START (fh))),
+			   ((uint8_t*) (FASLHDR_STACK_END (fh))))),
+	  ((uint8_t*) new_stack_start),
+	  ((uint8_t*) new_stack_end)));
   else
     {
       outf_fatal ("Pointer out of range: %#lx\n", ((unsigned long) caddr));
@@ -616,12 +618,12 @@ relocate_address (void * vaddr)
 		  ((unsigned long) (FASLHDR_CONSTANT_END (fh))),
 		  ((unsigned long) (FASLHDR_STACK_START (fh))),
 		  ((unsigned long) (FASLHDR_STACK_END (fh))));
-      signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA);
+      signal_error_from_primitive (ERR_FASL_FILE_BAD_DATA, tctx);
     }
   return (result);
 }
 
-static gc_table_t *
+static gc_table_t*
 intern_block_table (void)
 {
   static bool initialized_p = false;

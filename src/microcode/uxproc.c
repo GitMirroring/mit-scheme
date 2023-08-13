@@ -559,6 +559,8 @@ OS_process_send_signal (Tprocess process, int sig)
 	 lookup in the subprocess GC finalizer and put the appropriate
 	 subprocess object in the Scheme error it signals.  */
       error_process_terminated ();
+      /* NOTREACHED */
+      break;
 
       /* The remaining cases shouldn't happen unless there is a bug in
 	 the runtime; and if so, this is basically like a system call

@@ -118,9 +118,9 @@ static SCHEME_OBJECT current_object;
 
 #ifndef READ_REFERENCE_ADDRESS
 #  define READ_REFERENCE_ADDRESS(addr)					\
-     (* ((SCHEME_OBJECT **) (addr)))
+     (* ((SCHEME_OBJECT**) (addr)))
 #  define WRITE_REFERENCE_ADDRESS(ref, addr)				\
-     ((* ((SCHEME_OBJECT **) (addr))) = (ref))
+     ((* ((SCHEME_OBJECT**) (addr))) = (ref))
 #endif
 
 /* The weak chain is a linked list of all the live weak pairs whose
@@ -136,7 +136,7 @@ static SCHEME_OBJECT current_object;
    proven live, those ephemerons must not be broken, and consequently
    their data must be live too.  */
 
-static SCHEME_OBJECT * weak_chain;
+static SCHEME_OBJECT* weak_chain;
 static SCHEME_OBJECT ephemeron_list = SHARP_F;
 static SCHEME_OBJECT ephemeron_queue = SHARP_F;
 static bool scanning_ephemerons_p = false;
@@ -144,11 +144,11 @@ static bool scanning_ephemerons_p = false;
 extern SCHEME_OBJECT ephemeron_array;
 extern unsigned long ephemeron_count;
 
-static void queue_ephemerons_for_key (SCHEME_OBJECT *);
+static void queue_ephemerons_for_key (SCHEME_OBJECT*);
 static SCHEME_OBJECT gc_transport_weak_pair (SCHEME_OBJECT);
 static SCHEME_OBJECT gc_transport_ephemeron (SCHEME_OBJECT);
 
-static void run_gc_loop (SCHEME_OBJECT * , SCHEME_OBJECT **);
+static void run_gc_loop (SCHEME_OBJECT* , SCHEME_OBJECT**, tctx_t*);
 static void tospace_closed (void) NORETURN;
 static void tospace_open (void) NORETURN;
 
@@ -394,10 +394,10 @@ std_gc_table (void)
 }
 
 void
-gc_scan_oldspace (SCHEME_OBJECT * scan, SCHEME_OBJECT * end)
+gc_scan_oldspace (SCHEME_OBJECT* scan, SCHEME_OBJECT* end, tctx_t* tctx)
 {
   OS_expect_sequential_access (scan, end);
-  run_gc_loop (scan, (&end));
+  run_gc_loop (scan, &end, tctx);
   /* FIXME: This doesn't actually revert the expectation for [scan,
      end).  However, Unix has no way to query the madvice, or to
      dynamically scope it, so this is the best we can do.  Fortunately,
@@ -407,19 +407,19 @@ gc_scan_oldspace (SCHEME_OBJECT * scan, SCHEME_OBJECT * end)
 }
 
 void
-gc_scan_tospace (SCHEME_OBJECT * scan, SCHEME_OBJECT * end)
+gc_scan_tospace (SCHEME_OBJECT* scan, SCHEME_OBJECT* end, tctx_t* tctx)
 {
   if (end == 0)
-    run_gc_loop ((NEWSPACE_TO_TOSPACE (scan)), (&tospace_next));
+    run_gc_loop (NEWSPACE_TO_TOSPACE (scan), &tospace_next, tctx);
   else
     {
       SCHEME_OBJECT * tend = (NEWSPACE_TO_TOSPACE (end));
-      run_gc_loop ((NEWSPACE_TO_TOSPACE (scan)), (&tend));
+      run_gc_loop (NEWSPACE_TO_TOSPACE (scan), &tend, tctx);
     }
 }
 
 static void
-run_gc_loop (SCHEME_OBJECT * scan, SCHEME_OBJECT ** pend)
+run_gc_loop (SCHEME_OBJECT* scan, SCHEME_OBJECT** pend, tctx_t* tctx)
 {
   gc_ignore_object_p_t * ignore_object_p
     = (GCT_IGNORE_OBJECT_P (current_gc_table));
@@ -434,9 +434,8 @@ run_gc_loop (SCHEME_OBJECT * scan, SCHEME_OBJECT ** pend)
 	{
 	  current_scan = scan;
 	  current_object = object;
-	  scan
-	    = ((* (GCT_ENTRY (current_gc_table, (OBJECT_TYPE (object)))))
-	       (scan, object));
+	  scan = ((*GCT_ENTRY (current_gc_table, OBJECT_TYPE (object)))
+                    (scan, object, tctx));
 	}
     }
 }
@@ -479,7 +478,7 @@ DEFINE_GC_OBJECT_HANDLER (gc_cc_entry)
 {
 #ifdef CC_SUPPORT_P
   SCHEME_OBJECT old_block = (cc_entry_to_block (object));
-  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true));
+  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true, tctx));
   return (CC_ENTRY_NEW_BLOCK (object,
 			      (OBJECT_ADDRESS (new_block)),
 			      (OBJECT_ADDRESS (old_block))));
@@ -493,7 +492,7 @@ DEFINE_GC_OBJECT_HANDLER (gc_cc_return)
 {
 #ifdef CC_SUPPORT_P
   SCHEME_OBJECT old_block = (cc_return_to_block (object));
-  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true));
+  SCHEME_OBJECT new_block = (GC_HANDLE_VECTOR (old_block, true, tctx));
   return (CC_RETURN_NEW_BLOCK (object,
 			       (OBJECT_ADDRESS (new_block)),
 			       (OBJECT_ADDRESS (old_block))));
@@ -588,25 +587,25 @@ DEFINE_GC_HANDLER (gc_handle_non_pointer)
 
 DEFINE_GC_HANDLER (gc_handle_cell)
 {
-  (*scan) = (GC_HANDLE_TUPLE (object, 1));
+  (*scan) = (GC_HANDLE_TUPLE (object, 1, tctx));
   return (scan + 1);
 }
 
 DEFINE_GC_HANDLER (gc_handle_pair)
 {
-  (*scan) = (GC_HANDLE_TUPLE (object, 2));
+  (*scan) = (GC_HANDLE_TUPLE (object, 2, tctx));
   return (scan + 1);
 }
 
 DEFINE_GC_HANDLER (gc_handle_triple)
 {
-  (*scan) = (GC_HANDLE_TUPLE (object, 3));
+  (*scan) = (GC_HANDLE_TUPLE (object, 3, tctx));
   return (scan + 1);
 }
 
 DEFINE_GC_HANDLER (gc_handle_quadruple)
 {
-  (*scan) = (GC_HANDLE_TUPLE (object, 4));
+  (*scan) = (GC_HANDLE_TUPLE (object, 4, tctx));
   return (scan + 1);
 }
 
@@ -644,13 +643,13 @@ DEFINE_GC_HANDLER (gc_handle_cc_return)
 
 DEFINE_GC_HANDLER (gc_handle_aligned_vector)
 {
-  (*scan) = (GC_HANDLE_VECTOR (object, true));
+  (*scan) = (GC_HANDLE_VECTOR (object, true, tctx));
   return (scan + 1);
 }
 
 DEFINE_GC_HANDLER (gc_handle_unaligned_vector)
 {
-  (*scan) = (GC_HANDLE_VECTOR (object, false));
+  (*scan) = (GC_HANDLE_VECTOR (object, false, tctx));
   return (scan + 1);
 }
 
@@ -669,7 +668,7 @@ DEFINE_GC_HANDLER (gc_handle_reference_trap)
 {
   (*scan) = (((OBJECT_DATUM (object)) <= TRAP_MAX_IMMEDIATE)
 	     ? object
-	     : (GC_HANDLE_TUPLE (object, 2)));
+	     : (GC_HANDLE_TUPLE (object, 2, tctx)));
   return (scan + 1);
 }
 
@@ -711,7 +710,7 @@ DEFINE_GC_HANDLER (gc_handle_linkage_section)
 	  SCHEME_OBJECT * oaddr = (READ_REFERENCE_ADDRESS (scan));
 	  SCHEME_OBJECT osection =
 	    (GC_RAW_ADDRESS_TO_OBJECT (TC_HUNK3, oaddr));
-	  SCHEME_OBJECT nsection = (GC_HANDLE_TUPLE (osection, 3));
+	  SCHEME_OBJECT nsection = (GC_HANDLE_TUPLE (osection, 3, tctx));
 	  SCHEME_OBJECT * naddr = (GC_OBJECT_TO_RAW_ADDRESS (nsection));
 	  WRITE_REFERENCE_ADDRESS (naddr, scan);
 	  scan += 1;
@@ -984,7 +983,7 @@ gc_transport_ephemeron (SCHEME_OBJECT old_ephemeron)
 }
 
 static void
-scan_newspace_addr (SCHEME_OBJECT * addr)
+scan_newspace_addr (SCHEME_OBJECT* addr, tctx_t* tctx)
 {
   gc_ignore_object_p_t * ignore_object_p
     = (GCT_IGNORE_OBJECT_P (current_gc_table));
@@ -1002,8 +1001,8 @@ scan_newspace_addr (SCHEME_OBJECT * addr)
 
   current_scan = scan;
   current_object = object;
-  scan = ((* (GCT_ENTRY (current_gc_table, (OBJECT_TYPE (object)))))
-	  (scan, object));
+  scan = ((*GCT_ENTRY (current_gc_table, OBJECT_TYPE (object)))
+	  (scan, object, tctx));
 #ifdef ENABLE_GC_DEBUGGING_TOOLS
   if (scan != (addr + 1))
     std_gc_death ("scan_newspace_addr overflowed");
@@ -1013,7 +1012,7 @@ scan_newspace_addr (SCHEME_OBJECT * addr)
 }
 
 static void
-scan_ephemerons (void)
+scan_ephemerons (tctx_t* tctx)
 {
   SCHEME_OBJECT ephemeron = ephemeron_list;
   SCHEME_OBJECT * saved_newspace_next;
@@ -1047,8 +1046,8 @@ scan_ephemerons (void)
 #endif
       ephemeron_queue = (READ_TOSPACE (ephemeron_addr + EPHEMERON_NEXT));
       saved_newspace_next = newspace_next;
-      scan_newspace_addr (ephemeron_addr + EPHEMERON_DATUM);
-      gc_scan_tospace (saved_newspace_next, 0);
+      scan_newspace_addr (ephemeron_addr + EPHEMERON_DATUM, tctx);
+      gc_scan_tospace (saved_newspace_next, 0, tctx);
     }
   scanning_ephemerons_p = false;
 }
@@ -1110,15 +1109,15 @@ update_weak_pairs (void)
 }
 
 void
-update_weak_pointers (void)
+update_weak_pointers (tctx_t* tctx)
 {
-  scan_ephemerons ();
+  scan_ephemerons (tctx);
   update_ephemerons ();
   update_weak_pairs ();
 }
 
 void
-std_gc_death (const char * format, ...)
+std_gc_death (const char* format, ...)
 {
   va_list ap;
 
@@ -1135,7 +1134,7 @@ std_gc_death (const char * format, ...)
     }
   va_end (ap);
   if (gc_abort_handler != 0)
-    (*gc_abort_handler) ();
+    (*gc_abort_handler) (current_tctx ());
   exit (1);
 }
 

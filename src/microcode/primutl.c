@@ -103,7 +103,7 @@ Prim_unimplemented (tctx_t* tctx)
 {
   PRIMITIVE_HEADER (-1);
 
-  signal_error_from_primitive (ERR_UNIMPLEMENTED_PRIMITIVE);
+  signal_error_from_primitive (ERR_UNIMPLEMENTED_PRIMITIVE, tctx);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
@@ -508,7 +508,8 @@ table_entry_length (unsigned long code)
 void
 import_primitive_table (SCHEME_OBJECT * entries,
 			unsigned long n_entries,
-			SCHEME_OBJECT * primitives)
+			SCHEME_OBJECT * primitives,
+                        tctx_t* tctx)
 {
   unsigned long i;
   for (i = 0; (i < n_entries); i += 1)
@@ -520,7 +521,7 @@ import_primitive_table (SCHEME_OBJECT * entries,
 	    true, true, arity));
 
       if (!PRIMITIVE_P (prim))
-	signal_error_from_primitive (ERR_WRONG_ARITY_PRIMITIVES);
+	signal_error_from_primitive (ERR_WRONG_ARITY_PRIMITIVES, tctx);
 
       (*primitives++) = prim;
       entries += (1 + (OBJECT_DATUM (*entries)));

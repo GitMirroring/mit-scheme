@@ -294,7 +294,7 @@ extern unsigned long primitive_table_export_length (void);
 extern void export_primitive_table (SCHEME_OBJECT *);
 
 extern void import_primitive_table
-  (SCHEME_OBJECT *, unsigned long, SCHEME_OBJECT *);
+  (SCHEME_OBJECT*, unsigned long, SCHEME_OBJECT*, tctx_t*);
 
 extern void initialize_primitives (void);
 extern SCHEME_OBJECT make_primitive (const char *, int);
@@ -303,15 +303,15 @@ extern SCHEME_OBJECT find_primitive (SCHEME_OBJECT, bool, bool, int);
 
 /* Interpreter utilities */
 
-extern void Microcode_Termination (int code) NORETURN;
-extern void termination_normal (const int) NORETURN;
+extern void Microcode_Termination (int, tctx_t*) NORETURN;
+extern void termination_normal (const int, tctx_t*) NORETURN;
 extern void termination_init_error (void) NORETURN;
-extern void termination_end_of_computation (void) NORETURN;
-extern void termination_trap (void) NORETURN;
-extern void termination_no_error_handler (void) NORETURN;
-extern void termination_gc_out_of_space (void) NORETURN;
-extern void termination_eof (void) NORETURN;
-extern void termination_signal (const char * signal_name) NORETURN;
+extern void termination_end_of_computation (tctx_t*) NORETURN;
+extern void termination_trap (tctx_t*) NORETURN;
+extern void termination_no_error_handler (tctx_t*) NORETURN;
+extern void termination_gc_out_of_space (tctx_t*) NORETURN;
+extern void termination_eof (tctx_t*) NORETURN;
+extern void termination_signal (const char*) NORETURN;
 
 extern void setup_interrupt (unsigned long, tctx_t*);
 extern void preserve_interrupt_mask (sstack_t*);
@@ -323,7 +323,7 @@ extern void Do_Micro_Error (long, bool, tctx_t*);
 extern void Stack_Death (tctx_t*) NORETURN;
 extern SCHEME_OBJECT * control_point_start (SCHEME_OBJECT);
 extern SCHEME_OBJECT * control_point_end (SCHEME_OBJECT);
-extern void unpack_control_point (SCHEME_OBJECT, sstack_t*);
+extern void unpack_control_point (SCHEME_OBJECT, tctx_t*);
 
 /* Debugging utilities */
 

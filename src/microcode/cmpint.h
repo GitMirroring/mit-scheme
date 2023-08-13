@@ -32,6 +32,7 @@ USA.
 
 #include "config.h"
 #include "object.h"
+#include "stack.h"
 
 #define COMPILER_INTERFACE_VERSION 4
 
@@ -479,6 +480,7 @@ extern void compiled_with_stack_marker (SCHEME_OBJECT);
 
 extern void compiler_initialize (bool);
 extern void compiler_reset (SCHEME_OBJECT);
+extern void compiler_setup_interrupt(sstack_t*);
 
 extern void declare_compiled_code_block (SCHEME_OBJECT);
 

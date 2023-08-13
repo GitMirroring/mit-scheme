@@ -28,103 +28,18 @@ USA.
 #include "scheme.h"
 #include "prims.h"
 #include "osscheme.h"
-
-void
-error_out_of_channels (void)
-{
-  signal_error_from_primitive (ERR_OUT_OF_FILE_HANDLES);
-}
-
-void
-error_out_of_processes (void)
-{
-  signal_error_from_primitive (ERR_OUT_OF_FILE_HANDLES);
-}
-
-void
-error_unimplemented_primitive (void)
-{
-  signal_error_from_primitive (ERR_UNDEFINED_PRIMITIVE);
-}
-
-void
-error_floating_point_exception (void)
-{
-  signal_error_from_primitive (ERR_FLOATING_OVERFLOW);
-}
-
-void
-error_process_terminated (void)
-{
-  signal_error_from_primitive (ERR_PROCESS_TERMINATED);
-}
-
-int
-executing_scheme_primitive_p (void)
-{
-  return PRIMITIVE_P (get_primitive (current_tctx ()));
-}
-
-void
-request_console_resize_interrupt (void)
-{
-  REQUEST_INTERRUPT (INT_Global_3);
-}
-
-void
-request_character_interrupt (void)
-{
-  REQUEST_INTERRUPT (INT_Character);
-}
-
-void
-request_timer_interrupt (void)
-{
-  REQUEST_INTERRUPT (INT_Timer);
-}
-
-void
-request_suspend_interrupt (void)
-{
-  REQUEST_INTERRUPT (INT_Suspend);
-}
-
-int
-pending_interrupts_p (void)
-{
-  return (INTERRUPT_PENDING_P (INT_Mask));
-}
-
-void
-deliver_pending_interrupts (void)
-{
-  if (INTERRUPT_PENDING_P (INT_Mask))
-    signal_interrupt_from_primitive ();
-}
-
-unsigned long
-get_interrupt_mask (void)
-{
-  return (GET_INT_MASK);
-}
-
-void
-set_interrupt_mask (unsigned long mask)
-{
-  SET_INTERRUPT_MASK (mask & INT_Mask);
-}
 
 void
 debug_back_trace (outf_channel stream)
 {
   outf (stream, "*** Scheme Microcode Back Trace: ***\n");
-  Back_Trace (stream, stack_pointer (current_stack ()));
+  Back_Trace (stream, stack_pointer (tctx_stack (current_tctx ())));
   outf (stream, "*** End of Back Trace ***\n");
   outf_flush (stream);
 }
 
 void
-debug_examine_memory (long address, const char * label)
+debug_examine_memory (unsigned long address, const char* label)
 {
-  Print_Expression ((* ((SCHEME_OBJECT *) address)), ((char *) label));
+  Print_Expression (*((SCHEME_OBJECT*) address), (char*) label);
 }

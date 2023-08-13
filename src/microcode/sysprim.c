@@ -43,7 +43,7 @@ DEFINE_PRIMITIVE ("EXIT", Prim_non_restartable_exit, 0, 0,
   "Exit Scheme with no option to restart.")
 {
   PRIMITIVE_HEADER (0);
-  termination_normal (0);
+  termination_normal (0, tctx);
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
@@ -53,7 +53,7 @@ DEFINE_PRIMITIVE ("EXIT-WITH-VALUE",
 as exit status.")
 {
   PRIMITIVE_HEADER (1);
-  termination_normal ((int) arg_integer (1));
+  termination_normal ((int) arg_integer (1), tctx);
   PRIMITIVE_RETURN (UNSPECIFIC);
 }
 

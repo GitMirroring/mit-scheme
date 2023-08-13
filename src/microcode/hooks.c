@@ -245,16 +245,17 @@ control_point_end (SCHEME_OBJECT cp)
 }
 
 void
-unpack_control_point (SCHEME_OBJECT cp, sstack_t* s)
+unpack_control_point (SCHEME_OBJECT cp, tctx_t* tctx)
 {
   WHEN_DEBUGGING
     ({
       if (!CONTROL_POINT_P (cp))
-	Microcode_Termination (TERM_BAD_STACK);
+	Microcode_Termination (TERM_BAD_STACK, tctx);
     });
 
   SCHEME_OBJECT* scan_from = (control_point_end (cp));
   SCHEME_OBJECT* end_from = (control_point_start (cp));
+  sstack_t* s = tctx_stack (tctx);
   stack_reset (s);
   CLEAR_INTERRUPT (INT_Stack_Overflow);
   stack_check (scan_from - end_from, s);

@@ -30,29 +30,91 @@ USA.
 
 #include "outf.h"
 #include "os.h"
+#include "prims.h"
+
+static inline bool
+executing_scheme_primitive_p (tctx_t* tctx)
+{
+  return PRIMITIVE_P (get_primitive (tctx));
+}
+
+static inline void
+error_out_of_channels (void)
+{
+  signal_error_from_primitive (ERR_OUT_OF_FILE_HANDLES, current_tctx ());
+}
+
+static inline void
+error_out_of_processes (void)
+{
+  signal_error_from_primitive (ERR_OUT_OF_FILE_HANDLES, current_tctx ());
+}
+
+static inline void
+error_unimplemented_primitive (void)
+{
+  signal_error_from_primitive (ERR_UNDEFINED_PRIMITIVE, current_tctx ());
+}
+
+static inline void
+error_floating_point_exception (void)
+{
+  signal_error_from_primitive (ERR_FLOATING_OVERFLOW, current_tctx ());
+}
+
+static inline void
+error_process_terminated (void)
+{
+  signal_error_from_primitive (ERR_PROCESS_TERMINATED, current_tctx ());
+}
+
+static inline void
+request_console_resize_interrupt (void)
+{
+  request_interrupt (INT_Global_3, current_tctx ());
+}
+
+static inline void
+request_character_interrupt (void)
+{
+  request_interrupt (INT_Character, current_tctx ());
+}
+
+static inline void
+request_timer_interrupt (void)
+{
+  request_interrupt (INT_Timer, current_tctx ());
+}
+
+static inline void
+request_suspend_interrupt (void)
+{
+  request_interrupt (INT_Suspend, current_tctx ());
+}
+
+static inline bool
+pending_interrupts_p (void)
+{
+  return (INTERRUPT_PENDING_P (INT_Mask));
+}
+
+static inline void
+deliver_pending_interrupts (void)
+{
+  if (INTERRUPT_PENDING_P (INT_Mask))
+    signal_interrupt_from_primitive (current_tctx ());
+}
+
+static inline unsigned long
+get_interrupt_mask (void)
+{
+  return (GET_INT_MASK);
+}
 
 extern Tchannel arg_channel (int);
 
-extern int executing_scheme_primitive_p (void);
-
 extern void debug_edit_flags (void);
 extern void debug_back_trace (outf_channel);
-extern void debug_examine_memory (long, const char *);
-
-extern void error_out_of_channels (void) NORETURN;
-extern void error_unimplemented_primitive (void) NORETURN;
-extern void error_out_of_processes (void) NORETURN;
-extern void error_floating_point_exception (void) NORETURN;
-extern void error_process_terminated (void) NORETURN;
-
-extern void request_console_resize_interrupt (void);
-extern void request_character_interrupt (void);
-extern void request_timer_interrupt (void);
-extern void request_suspend_interrupt (void);
-extern void deliver_pending_interrupts (void);
-extern int pending_interrupts_p (void);
-extern unsigned long get_interrupt_mask (void);
-extern void set_interrupt_mask (unsigned long mask);
-extern void signal_interrupt_for_primitive (void) NORETURN;
+extern void debug_examine_memory (unsigned long, const char*);
 
 #endif /* SCM_OSSCHEME_H */
