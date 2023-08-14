@@ -131,13 +131,13 @@ history_rib_marked_p (SCHEME_OBJECT rib)
 #  define COMPILER_NEW_REDUCTION compiler_new_reduction
 #  define COMPILER_END_SUBPROBLEM end_subproblem
 #else
-#  define NEW_SUBPROBLEM(exp, env) do {} while (false)
-#  define REUSE_SUBPROBLEM(exp, env) do {} while (false)
-#  define NEW_REDUCTION(exp, env) do {} while (false)
-#  define END_SUBPROBLEM() do {} while (false)
-#  define COMPILER_NEW_REDUCTION() do {} while (false)
-#  define COMPILER_NEW_SUBPROBLEM() do {} while (false)
-#  define COMPILER_END_SUBPROBLEM() do {} while (false)
+#  define NEW_SUBPROBLEM(exp, env, tctx) do {} while (false)
+#  define REUSE_SUBPROBLEM(exp, env, tctx) do {} while (false)
+#  define NEW_REDUCTION(exp, env, tctx) do {} while (false)
+#  define END_SUBPROBLEM(tctx) do {} while (false)
+#  define COMPILER_NEW_REDUCTION(tctx) do {} while (false)
+#  define COMPILER_NEW_SUBPROBLEM(tctx) do {} while (false)
+#  define COMPILER_END_SUBPROBLEM(tctx) do {} while (false)
 #endif
 
 extern void reset_history (tctx_t*);

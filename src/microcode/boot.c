@@ -105,7 +105,7 @@ main_name (int argc, const char ** argv)
   tctx_t* tctx = initialize_tctx (stack_size, memory_block_start);
 
   initialize_primitives ();
-  compiler_initialize (option_fasl_file != 0);
+  compiler_initialize (option_fasl_file != 0, tctx);
   OS_initialize ();
   start_scheme (tctx);
   termination_init_error ();

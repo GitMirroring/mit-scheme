@@ -212,7 +212,7 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
   if (compiler_utilities != SHARP_F)
     compiler_reset (compiler_utilities);
   else
-    compiler_initialize (true);
+    compiler_initialize (true, tctx);
 #endif
   fixed_objects = SHARP_F;
 

@@ -467,19 +467,19 @@ extern SCHEME_OBJECT cc_block_debugging_info (SCHEME_OBJECT);
 extern SCHEME_OBJECT cc_block_environment (SCHEME_OBJECT);
 extern SCHEME_OBJECT cc_block_linkage_info (SCHEME_OBJECT);
 
-extern long enter_compiled_expression (void);
-extern void guarantee_cc_return (unsigned long);
-extern void guarantee_interp_return (void);
-extern long apply_compiled_procedure (void);
-extern long return_to_compiled_code (void);
+extern long enter_compiled_expression (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern void guarantee_cc_return (unsigned long, tctx_t*);
+extern void guarantee_interp_return (tctx_t*);
+extern long apply_compiled_procedure (tctx_t*);
+extern long return_to_compiled_code (tctx_t*);
 
 extern void apply_compiled_from_primitive (unsigned long, SCHEME_OBJECT);
 extern void compiled_with_interrupt_mask
   (unsigned long, SCHEME_OBJECT, unsigned long);
 extern void compiled_with_stack_marker (SCHEME_OBJECT);
 
-extern void compiler_initialize (bool);
-extern void compiler_reset (SCHEME_OBJECT);
+extern void compiler_initialize (bool, tctx_t*);
+extern void compiler_reset (SCHEME_OBJECT, tctx_t*);
 extern void compiler_setup_interrupt(sstack_t*);
 
 extern void declare_compiled_code_block (SCHEME_OBJECT);

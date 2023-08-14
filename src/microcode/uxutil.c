@@ -231,7 +231,7 @@ userio_confirm (const char * prompt)
 	  {
 	    /* IO problems, assume everything scrod. */
 	    fprintf (stderr, "Problems reading keyboard input -- exiting.\n");
-	    termination_eof ();
+	    termination_eof (current_tctx ());
 	  }
 	}
     }
