@@ -194,10 +194,10 @@ termination_init_error (void)
 }
 
 void
-termination_end_of_computation (tctx_t* tctx)
+termination_end_of_computation (SCHEME_OBJECT val, tctx_t* tctx)
 {
   termination_prefix (TERM_END_OF_COMPUTATION, tctx);
-  Print_Expression (GET_VAL, "Final result");
+  Print_Expression (val, "Final result");
   outf_console("\n");
   termination_suffix (TERM_END_OF_COMPUTATION, 0, false, tctx);
 }

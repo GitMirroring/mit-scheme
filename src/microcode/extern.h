@@ -306,7 +306,7 @@ extern SCHEME_OBJECT find_primitive (SCHEME_OBJECT, bool, bool, int);
 extern void Microcode_Termination (int, tctx_t*) NORETURN;
 extern void termination_normal (const int, tctx_t*) NORETURN;
 extern void termination_init_error (void) NORETURN;
-extern void termination_end_of_computation (tctx_t*) NORETURN;
+extern void termination_end_of_computation (SCHEME_OBJECT, tctx_t*) NORETURN;
 extern void termination_trap (tctx_t*) NORETURN;
 extern void termination_no_error_handler (tctx_t*) NORETURN;
 extern void termination_gc_out_of_space (tctx_t*) NORETURN;

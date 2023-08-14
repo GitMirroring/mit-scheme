@@ -33,6 +33,7 @@ USA.
 #include "history.h"
 #include "floenv.h"
 #include "pruxffi.h"
+
 /* Using SCM instead of SCHEME_OBJECT here, hoping to ensure that
    these types always match. */
 
@@ -637,7 +638,6 @@ callout_pop (char * tos)
 /* Callbacks */
 
 static SCM run_callback = SHARP_F;
-extern SCHEME_OBJECT Re_Enter_Interpreter (void);
 
 void
 callback_run_kernel (long callback_id, CallbackKernel kernel)
@@ -645,8 +645,6 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
   /* Used by callback trampolines after saving the callback args on
      the CStack. */
   tctx_t* tctx = current_tctx ();
-  SCM* saved_stack_pointer;
-  SCM* saved_last_return_code;
   unsigned long nargs = primitive_lexpr_actuals (tctx);
 
   if (run_callback == SHARP_F)
@@ -657,7 +655,8 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
 	  outf_error_line
 	    ("\nWarning: punted callback #%ld.  Missing primitive!",
 	     callback_id);
-	  SET_VAL (FIXNUM_ZERO);
+          reset_vals (tctx);
+          add_val (FIXNUM_ZERO, tctx);
 	  return;
 	}
     }
@@ -675,16 +674,15 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
   stack_push (make_apply_frame_header (nargs + 1), tctx);
   push_cont_rc (RC_INTERNAL_APPLY, c_call_continue, tctx);
 
-  saved_stack_pointer = stack_pointer (tctx);
-  saved_last_return_code = last_return_code;
+  SCM* saved_stack_pointer = stack_pointer (tctx);
+  SCM* saved_last_return_code = last_return_code;
   stack_check ((2 * CONTINUATION_SIZE) + STACK_ENV_EXTRA_SLOTS + 1, tctx);
   push_cont_rc (RC_END_OF_COMPUTATION, run_callback, tctx);
   stack_push (run_callback, tctx);
   stack_push (make_apply_frame_header (1), tctx);
   push_cont_rc (RC_INTERNAL_APPLY, run_callback, tctx);
   last_return_code = stack_pointer (tctx);
-  SET_EXP (SHARP_F);
-  Re_Enter_Interpreter ();
+  Re_Enter_Interpreter (SHARP_F, ???, tctx);
 
   if (stack_pointer (tctx) != saved_stack_pointer
 #ifdef ENABLE_DEBUGGING_TOOLS
@@ -965,7 +963,7 @@ long_value (void)
   /* Convert VAL to a long.  Accept integers AND characters.  Like
      arg_integer otherwise. */
 
-  SCM value = GET_VAL;
+  SCM value = get_single_val (current_tctx ());
   if (CHARACTER_P (value))
     return (CHAR_TO_ASCII (value));
   if (! (INTEGER_P (value)))
@@ -990,7 +988,7 @@ ulong_value (void)
   /* Convert VAL to an unsigned long.  Accept integers AND characters.
      Like arg_integer otherwise. */
 
-  SCM value = GET_VAL;
+  SCM value = get_single_val (current_tctx ());
   if (CHARACTER_P (value))
     return (CHAR_TO_ASCII (value));
   if (! (INTEGER_P (value)))
@@ -1015,7 +1013,7 @@ double_value (void)
 {
   /* Convert VAL to a double.  Like arg_real_number. */
 
-  SCM value = GET_VAL;
+  SCM value = get_single_val (current_tctx ());
 
   if (! REAL_P (value))
     {
@@ -1036,7 +1034,7 @@ double_value (void)
 void *
 pointer_value (void)
 {
-  SCM value = GET_VAL;
+  SCM value = get_single_val (current_tctx ());
 
   if (integer_zero_p (value))
     return (NULL);
@@ -1113,7 +1111,7 @@ re_enter_scheme (void)
   tctx_t* tctx = current_tctx ();
   assert (get_primitive (tctx) == c_call_continue);
   back_out_of_primitive (tctx);
-  Re_Enter_Interpreter ();
+  Re_Enter_Interpreter (???, ???, tctx);
 
   assert (get_primitive (tctx) == SHARP_F);
   assert (GET_EXP == SHARP_F);

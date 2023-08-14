@@ -485,7 +485,12 @@ cont_end_of_computation (tctx_t* tctx)
   /* Signals bottom of stack */
   interpreter_state_t* state = interpreter_state (tctx);
   interpreter_state_t* previous_state = state->previous_state;
-  if (previous_state != NULL_INTERPRETER_STATE)
+  if (previous_state == NULL_INTERPRETER_STATE)
+    {
+      termination_end_of_computation (get_single_val (tctx), tctx);
+      /*NOTREACHED*/
+    }
+  else
     {
       dstack_set_position (state->dstack_position);
       set_interpreter_state (previous_state, tctx);
