@@ -210,14 +210,14 @@ can, however, be any file which can be loaded with BINARY-FASLOAD.")
 #ifdef CC_SUPPORT_P
   compiler_utilities = (PAIR_CDR (result));
   if (compiler_utilities != SHARP_F)
-    compiler_reset (compiler_utilities);
+    compiler_reset (compiler_utilities, tctx);
   else
     compiler_initialize (true, tctx);
 #endif
   fixed_objects = SHARP_F;
 
   /* Setup initial program */
-  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, tctx_stack (tctx));
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, tctx);
 
   SCHEME_OBJECT exp = PAIR_CAR (result);
   SCHEME_OBJECT env = THE_GLOBAL_ENV;
@@ -368,11 +368,10 @@ static SCHEME_OBJECT
 load_file (fasl_file_handle_t handle, unsigned long old_ephemeron_count,
            tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   new_heap_start = Free;
   new_constant_start = constant_alloc_next;
-  new_stack_start = stack_start (s);
-  new_stack_end = stack_end (s);
+  new_stack_start = stack_start (tctx);
+  new_stack_end = stack_end (tctx);
   new_utilities
     = ((compiler_utilities == SHARP_F)
        ? 0

@@ -123,27 +123,27 @@ primitive_gc_if_needed (unsigned long amount, tctx_t* tctx)
 } while (false)
 
 static inline SCHEME_OBJECT
-arg_ref (unsigned int n, sstack_t* s)
+arg_ref (unsigned int n, tctx_t* tctx)
 {
-  return stack_ref (n - 1, s);
+  return stack_ref (n - 1, tctx);
 }
 
 static inline SCHEME_OBJECT*
-arg_loc (unsigned int n, sstack_t* s)
+arg_loc (unsigned int n, tctx_t* tctx)
 {
-  return stack_loc (n - 1, s);
+  return stack_loc (n - 1, tctx);
 }
 
 static inline void
-pop_primitive_frame (unsigned int arity, sstack_t* s)
+pop_primitive_frame (unsigned int arity, tctx_t* tctx)
 {
-  return increment_sp (arity, s);
+  return increment_sp (arity, tctx);
 }
 
-#define ARG_LOC(n) (arg_loc (n, current_stack ()))
-#define ARG_REF(n) (arg_ref (n, current_stack ()))
+#define ARG_LOC(n) (arg_loc (n, current_tctx ()))
+#define ARG_REF(n) (arg_ref (n, current_tctx ()))
 #define POP_PRIMITIVE_FRAME(arity)                                      \
-  (pop_primitive_frame (arity, current_stack ()))
+  (pop_primitive_frame (arity, current_tctx ()))
 
 #define UNSIGNED_FIXNUM_ARG(arg)					\
   ((FIXNUM_P (ARG_REF (arg)))						\

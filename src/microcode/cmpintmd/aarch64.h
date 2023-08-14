@@ -148,7 +148,7 @@ storage	0x10	8 [tag: first trampoline datum]
 
 #define ASM_RESET_HOOK aarch64_reset_hook
 
-void aarch64_reset_hook (void);
+void aarch64_reset_hook (tctx_t*);
 
 #define CMPINT_USE_STRUCS 1
 

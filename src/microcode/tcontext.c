@@ -29,9 +29,13 @@ USA.
 #include "history.h"
 
 static void
-init_tctx (tctx_t* tctx, sstack_t* stack)
+init_tctx (tctx_t* tctx, unsigned long size, SCHEME_OBJECT* block)
 {
-  tctx->stack = stack;
+  tctx->stack_start = block;
+  tctx->stack_end = block + size;
+  tctx->stack_guard = tctx->stack_end + STACK_GUARD_SIZE;
+  tctx->stack_pointer = tctx->stack_end;
+  *tctx->stack_start = (MAKE_BROKEN_HEART (tctx->stack_start));
   tctx->value_pointer = tctx->value_store;
   set_history
     ((VECTOR_P (fixed_objects) && READ_DUMMY_HISTORY () != SHARP_F)
@@ -63,8 +67,7 @@ static tctx_t* current_tctx_v;
 tctx_t*
 initialize_tctx (unsigned long size, SCHEME_OBJECT* block)
 {
-  initialize_default_stack (size, block);
-  init_tctx (&default_tctx_v, default_stack ());
+  init_tctx (&default_tctx_v, size, block);
   current_tctx_v = &default_tctx_v;
   return current_tctx_v;
 }
@@ -79,4 +82,13 @@ tctx_t*
 current_tctx (void)
 {
   return current_tctx_v;
+}
+
+void
+stack_reset (tctx_t* tctx)
+{
+  tctx->stack_pointer = tctx->stack_end;
+  *tctx->stack_start = (MAKE_BROKEN_HEART (tctx->stack_start));
+  tctx->stack_guard = tctx->stack_start + STACK_GUARD_SIZE;
+  compiler_setup_interrupt (tctx);
 }

@@ -124,8 +124,8 @@ SCHEME_OBJECT reflect_to_interface;
 static bool linking_cc_block_p = 0;
 
 static SCHEME_OBJECT make_compiler_utilities (tctx_t*);
-static void open_stack_gap (unsigned long, unsigned long, sstack_t*);
-static void close_stack_gap (unsigned long, unsigned long, sstack_t*);
+static void open_stack_gap (unsigned long, unsigned long, tctx_t*);
+static void close_stack_gap (unsigned long, unsigned long, tctx_t*);
 static void recover_from_apply_error (SCHEME_OBJECT, unsigned long, tctx_t*);
 static long link_remaining_sections (link_cc_state_t *);
 static void start_linking_cc_block (void);
@@ -149,7 +149,7 @@ static void setup_compiled_invocation_from_primitive
 static long setup_compiled_invocation (SCHEME_OBJECT, unsigned long, tctx_t*);
 static long setup_lexpr_invocation
   (SCHEME_OBJECT, unsigned long, unsigned long);
-static bool open_gap (unsigned long, unsigned long, sstack_t*);
+static bool open_gap (unsigned long, unsigned long, tctx_t*);
 static bool unlinked_section_start_p (SCHEME_OBJECT *, SCHEME_OBJECT *);
 static bool cc_block_address_closure_p (SCHEME_OBJECT *);
 static void write_uuo_link (SCHEME_OBJECT, SCHEME_OBJECT *);
@@ -298,16 +298,15 @@ long C_return_value;
 #endif
 
 #ifndef ASM_RESET_HOOK
-#  define ASM_RESET_HOOK() do {} while (false)
+#  define ASM_RESET_HOOK(tctx) do {} while (false)
 #endif
 
 static inline void
 save_last_return_code (unsigned long rc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  unsigned long offset = stack_pointer (s) - last_return_code;
-  stack_push (ULONG_TO_FIXNUM (offset), s);
-  stack_push (MAKE_RETURN_CODE (rc), s);
+  unsigned long offset = stack_pointer (tctx) - last_return_code;
+  stack_push (ULONG_TO_FIXNUM (offset), tctx);
+  stack_push (MAKE_RETURN_CODE (rc), tctx);
   COMPILER_NEW_SUBPROBLEM (tctx);
 }
 
@@ -320,7 +319,7 @@ check_last_return_code (tctx_t* tctx)
 static inline void
 restore_last_return_code (tctx_t* tctx)
 {
-  last_return_code = (stack_loc (FIXNUM_TO_ULONG (GET_EXP), tctx_stack (tctx)));
+  last_return_code = (stack_loc (FIXNUM_TO_ULONG (GET_EXP), tctx));
   check_last_return_code (tctx);
   COMPILER_END_SUBPROBLEM (tctx);
 }
@@ -348,7 +347,7 @@ compiler_initialize (bool fasl_p, tctx_t* tctx)
 }
 
 void
-compiler_setup_interrupt (sstack_t* s)
+compiler_setup_interrupt (tctx_t* tctx)
 {
   SET_MEMTOP
     (((PENDING_INTERRUPTS ()) != 0)
@@ -357,7 +356,7 @@ compiler_setup_interrupt (sstack_t* s)
      ? heap_alloc_limit
      : heap_end);
   SET_STACK_GUARD
-    (stack_guard (INTERRUPT_ENABLED_P (INT_Stack_Overflow), s));
+    (stack_guard (INTERRUPT_ENABLED_P (INT_Stack_Overflow), tctx));
 }
 
 #define COMPILER_UTILITIES_HEADERS(h1, h2, n)				\
@@ -435,7 +434,7 @@ compiler_reset (SCHEME_OBJECT new_block, tctx_t* tctx)
   SET_CLOSURE_SPACE (0);
   SET_REFLECTOR (reflect_to_interface);
 
-  ASM_RESET_HOOK ();
+  ASM_RESET_HOOK (tctx);
 }
 
 /* Main compiled-code entry points */
@@ -461,9 +460,8 @@ enter_compiled_expression (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 long
 apply_compiled_procedure (tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  unsigned long n_args = apply_frame_header_n_args (stack_pop (s));
-  SCHEME_OBJECT procedure = (stack_pop (s));
+  unsigned long n_args = apply_frame_header_n_args (stack_pop (tctx));
+  SCHEME_OBJECT procedure = (stack_pop (tctx));
   long code = setup_compiled_invocation (procedure, n_args, tctx);
   if (code != PRIM_DONE)
     return (code);
@@ -488,8 +486,7 @@ long
 return_to_compiled_code (tctx_t* tctx)
 {
   restore_last_return_code (tctx);
-  sstack_t* s = tctx_stack (tctx);
-  SCHEME_OBJECT cont = stack_pop (s);
+  SCHEME_OBJECT cont = stack_pop (tctx);
   /* Due to a mistake, continuations for microcode utilities are
      represented as compiled entries.  Should fix eventually.  */
   if (CC_RETURN_P (cont))
@@ -510,7 +507,7 @@ return_to_compiled_code (tctx_t* tctx)
   else
     {
     bad:
-      stack_push (cont, s);
+      stack_push (cont, tctx);
       SAVE_CONT ();
       return ERR_INAPPLICABLE_OBJECT;
     }
@@ -519,81 +516,78 @@ return_to_compiled_code (tctx_t* tctx)
 void
 guarantee_cc_return (unsigned long offset, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  if (CC_RETURN_P (stack_ref (offset, s)))
+  if (CC_RETURN_P (stack_ref (offset, tctx)))
     return;
-  assert (RETURN_CODE_P (stack_ref (offset, s)));
-  if (stack_ref (offset, s) == MAKE_RETURN_CODE (RC_REENTER_COMPILED_CODE))
+  assert (RETURN_CODE_P (stack_ref (offset, tctx)));
+  if (stack_ref (offset, tctx) == MAKE_RETURN_CODE (RC_REENTER_COMPILED_CODE))
     {
-      unsigned long lrc = FIXNUM_TO_ULONG (stack_ref (offset + 1, s));
-      close_stack_gap (offset, CONTINUATION_SIZE, s);
-      last_return_code = stack_loc (offset + lrc, s);
+      unsigned long lrc = FIXNUM_TO_ULONG (stack_ref (offset + 1, tctx));
+      close_stack_gap (offset, CONTINUATION_SIZE, tctx);
+      last_return_code = stack_loc (offset + lrc, tctx);
       check_last_return_code (tctx);
       COMPILER_END_SUBPROBLEM (tctx);
     }
   else
     {
-      last_return_code = stack_loc (offset, s);
+      last_return_code = stack_loc (offset, tctx);
       check_last_return_code (tctx);
-      open_stack_gap (offset, 1, s);
-      stack_set (offset, return_to_interpreter, s);
+      open_stack_gap (offset, 1, tctx);
+      stack_set (offset, return_to_interpreter, tctx);
     }
 }
 
 void
 guarantee_interp_return (tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  unsigned long offset = 1 + apply_frame_size (s);
-  if (RETURN_CODE_P (stack_ref (offset, s)))
+  unsigned long offset = 1 + apply_frame_size (tctx);
+  if (RETURN_CODE_P (stack_ref (offset, tctx)))
     return;
-  assert (CC_RETURN_P (stack_ref (offset, s)));
-  if (stack_ref (offset, s) == return_to_interpreter)
+  assert (CC_RETURN_P (stack_ref (offset, tctx)));
+  if (stack_ref (offset, tctx) == return_to_interpreter)
     {
-      assert (RETURN_CODE_P (stack_ref (offset + 1, s)));
-      close_stack_gap (offset, 1, s);
+      assert (RETURN_CODE_P (stack_ref (offset + 1, tctx)));
+      close_stack_gap (offset, 1, tctx);
       COMPILER_NEW_REDUCTION (tctx);
     }
   else
     {
-      open_stack_gap (offset, CONTINUATION_SIZE, s);
-      SCHEME_OBJECT* sp = stack_pointer (s);
-      increment_sp (offset, s);
+      open_stack_gap (offset, CONTINUATION_SIZE, tctx);
+      SCHEME_OBJECT* sp = stack_pointer (tctx);
+      increment_sp (offset, tctx);
       save_last_return_code (RC_REENTER_COMPILED_CODE, tctx);
-      set_stack_pointer (sp, s);
+      set_stack_pointer (sp, tctx);
     }
 }
 
 static void
-open_stack_gap (unsigned long offset, unsigned long n_words, sstack_t* s)
+open_stack_gap (unsigned long offset, unsigned long n_words, tctx_t* tctx)
 {
-  SCHEME_OBJECT* scan_from = stack_pointer (s);
+  SCHEME_OBJECT* scan_from = stack_pointer (tctx);
   SCHEME_OBJECT* scan_end = scan_from + offset;
   SCHEME_OBJECT* scan_to = scan_from - n_words;
   SCHEME_OBJECT* new_sp = scan_to;
   while (scan_from < scan_end)
     *scan_to++ = *scan_from++;
-  set_stack_pointer (new_sp, s);
+  set_stack_pointer (new_sp, tctx);
 }
 
 static void
-close_stack_gap (unsigned long offset, unsigned long n_words, sstack_t* s)
+close_stack_gap (unsigned long offset, unsigned long n_words, tctx_t* tctx)
 {
-  SCHEME_OBJECT* scan_end = stack_pointer (s);
+  SCHEME_OBJECT* scan_end = stack_pointer (tctx);
   SCHEME_OBJECT* scan_from = scan_end + offset;
   SCHEME_OBJECT* scan_to = scan_from + n_words;
   SCHEME_OBJECT* new_sp = scan_end + n_words;
   while (scan_from > scan_end)
     *--scan_to = *--scan_from;
-  set_stack_pointer (new_sp, s);
+  set_stack_pointer (new_sp, tctx);
 }
 
 static void
 recover_from_apply_error (SCHEME_OBJECT proc, unsigned long nargs, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  stack_push (proc, s);
-  stack_push (make_apply_frame_header (nargs + 1), s);
+  stack_push (proc, tctx);
+  stack_push (make_apply_frame_header (nargs + 1), tctx);
   guarantee_interp_return (tctx);
 }
 
@@ -683,7 +677,6 @@ DEFINE_SCHEME_UTILITY_2 (comutil_apply, procedure, frame_size)
   DECLARE_UTILITY_ARG (SCHEME_OBJECT, procedure);
   DECLARE_UTILITY_ARG (unsigned long, frame_size);
   tctx_t* tctx = current_tctx ();
-  sstack_t* s = tctx_stack (tctx);
   while (1)
     switch (OBJECT_TYPE (procedure))
       {
@@ -702,7 +695,7 @@ DEFINE_SCHEME_UTILITY_2 (comutil_apply, procedure, frame_size)
 	  SCHEME_OBJECT operator = entity_operator (procedure);
 	  if (!CC_ENTRY_P (operator))
 	    goto handle_in_interpreter;
-	  stack_push (procedure, s);
+	  stack_push (procedure, tctx);
 	  procedure = operator;
 	  frame_size += 1;
 	  goto invoke_compiled_entry;
@@ -713,7 +706,7 @@ DEFINE_SCHEME_UTILITY_2 (comutil_apply, procedure, frame_size)
 	  SCHEME_OBJECT applicator = record_applicator (procedure);
 	  if (!CC_ENTRY_P (applicator))
 	    goto handle_in_interpreter;
-	  stack_push (procedure, s);
+	  stack_push (procedure, tctx);
 	  procedure = applicator;
 	  frame_size += 1;
 	  goto invoke_compiled_entry;
@@ -1668,7 +1661,7 @@ setup_compiled_invocation (SCHEME_OBJECT procedure, unsigned long n_args,
       recover_from_apply_error (procedure, n_args);
       return (ERR_WRONG_NUMBER_OF_ARGUMENTS);
     }
-  if (open_gap (n_args, n_max, s))
+  if (open_gap (n_args, n_max, tctx))
     {
       recover_from_apply_error (procedure, n_args);
       return (PRIM_APPLY_INTERRUPT);
@@ -1683,7 +1676,7 @@ setup_lexpr_invocation (SCHEME_OBJECT procedure,
 {
   if (n_args <= n_max)
     {
-      if (open_gap (n_args, (n_max + 1), s))
+      if (open_gap (n_args, (n_max + 1), tctx))
 	{
 	  recover_from_apply_error (procedure, n_args);
 	  return (PRIM_APPLY_INTERRUPT);
@@ -1726,7 +1719,7 @@ setup_lexpr_invocation (SCHEME_OBJECT procedure,
 }
 
 static bool
-open_gap (unsigned long n_args, unsigned long n_needed, sstack_t* s)
+open_gap (unsigned long n_args, unsigned long n_needed, tctx_t* tctx)
 {
   unsigned long n_defaults = (n_needed - n_args);
 
@@ -1734,7 +1727,7 @@ open_gap (unsigned long n_args, unsigned long n_needed, sstack_t* s)
   if (PENDING_INTERRUPTS_P)
     return (true);
 
-  open_stack_gap (n_args, n_defaults, s);
+  open_stack_gap (n_args, n_defaults, tctx);
   {
     SCHEME_OBJECT * scan = (STACK_LOC (n_args));
     SCHEME_OBJECT * end = (STACK_LOC (n_needed));

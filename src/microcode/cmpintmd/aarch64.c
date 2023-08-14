@@ -359,7 +359,7 @@ store_trampoline_insns (insn_t * entry, uint8_t code)
 }
 
 void
-aarch64_reset_hook (void)
+aarch64_reset_hook (tctx_t* tctx)
 {
   /* XXX Make sure we're mapped write and execute.  (Such is the state...)  */
 }

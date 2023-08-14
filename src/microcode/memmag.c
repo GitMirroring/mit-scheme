@@ -182,9 +182,9 @@ reset_allocator_parameters (unsigned long n_constant, unsigned long reserved)
 {
   heap_reserved = ((reserved == 0) ? DEFAULT_HEAP_RESERVED : reserved);
   gc_space_needed = 0;
-  sstack_t* s = default_stack ();
-  set_stack_start (memory_block_start, s);
-  set_stack_end (memory_block_start + saved_stack_size, s);
+  tctx_t* tctx = default_tctx ();
+  set_stack_start (memory_block_start, tctx);
+  set_stack_end (memory_block_start + saved_stack_size, tctx);
   constant_start = memory_block_start + saved_stack_size;
   constant_alloc_next = constant_start;
   constant_end = constant_alloc_next + n_constant + CONSTANT_SPACE_FUDGE;
@@ -192,7 +192,7 @@ reset_allocator_parameters (unsigned long n_constant, unsigned long reserved)
   Free = heap_start;
   heap_end = memory_block_end;
   heap_alloc_limit = heap_end - heap_reserved;
-  stack_reset (s);
+  stack_reset (tctx);
 }
 
 static void
@@ -246,8 +246,7 @@ the primitive GC daemons before returning.")
   PRIMITIVE_HEADER (1);
   canonicalize_primitive_context (tctx);
 
-  sstack_t* s = tctx_stack (tctx);
-  if (stack_overwritten_p (s))
+  if (stack_overwritten_p (tctx))
     stack_death ("GC");
   if (Free > heap_end)
     {
@@ -270,7 +269,7 @@ the primitive GC daemons before returning.")
   ENTER_CRITICAL_SECTION ("garbage collector");
 
 #ifdef ENABLE_DEBUGGING_TOOLS
-  if (GC_Debug == true) verify_heap (s);
+  if (GC_Debug == true) verify_heap (tctx);
 #endif
 
   open_tospace (heap_start);
@@ -280,12 +279,12 @@ the primitive GC daemons before returning.")
   std_gc_pt1 (tctx);
   std_gc_pt2 (tctx);
 
-  stack_check (CONTINUATION_SIZE, s);
+  stack_check (CONTINUATION_SIZE, tctx);
   push_cont_rc (RC_NORMAL_GC_DONE,
                 ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
                                  ? (HEAP_AVAILABLE - gc_space_needed)
                                  : 0),
-                s);
+                tctx);
 
   RENAME_CRITICAL_SECTION ("garbage collector daemon");
 
@@ -293,9 +292,9 @@ the primitive GC daemons before returning.")
   if (daemon == SHARP_F)
     PRIMITIVE_ABORT (PRIM_POP_RETURN);
 
-  stack_check (2, s);
-  stack_push (daemon, s);
-  stack_push (make_apply_frame_header (1), s);
+  stack_check (2, tctx);
+  stack_push (daemon, tctx);
+  stack_push (make_apply_frame_header (1), tctx);
   PRIMITIVE_ABORT (PRIM_APPLY);
   /*NOTREACHED*/
   PRIMITIVE_RETURN (UNSPECIFIC);
@@ -315,8 +314,7 @@ std_gc_pt1 (tctx_t* tctx)
   add_to_tospace (get_history (tctx));
 
   current_gc_table = (std_gc_table ());
-  sstack_t* s = tctx_stack (tctx);
-  gc_scan_oldspace (stack_pointer (s), stack_end (s), tctx);
+  gc_scan_oldspace (stack_pointer (tctx), stack_end (tctx), tctx);
   gc_scan_oldspace (constant_start, constant_alloc_next, tctx);
   gc_scan_tospace (saved_to, 0, tctx);
 

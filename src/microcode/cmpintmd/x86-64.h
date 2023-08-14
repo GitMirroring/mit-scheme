@@ -281,7 +281,7 @@ extern void asm_trampoline_to_interface (void);
 extern void start_closure_relocation (SCHEME_OBJECT *, reloc_ref_t *);
 extern insn_t * read_compiled_closure_target (insn_t *, reloc_ref_t *);
 extern insn_t * read_uuo_target (SCHEME_OBJECT *);
-extern void x86_64_reset_hook (void);
+extern void x86_64_reset_hook (tctx_t*);
 
 #ifndef HAVE_FENV_H
 #  define CMPINTMD_EMULATES_FENV

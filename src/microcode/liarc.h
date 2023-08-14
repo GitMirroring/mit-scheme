@@ -40,7 +40,7 @@ USA.
 #include "sdata.h"
 #include "fixnum.h"
 #include "errors.h"
-#include "stack.h"
+#include "tcontext.h"
 #include "interp.h"
 #include "outf.h"
 #include "extern.h"

@@ -345,7 +345,7 @@ extern void start_closure_relocation (SCHEME_OBJECT *, reloc_ref_t *);
 extern insn_t * read_compiled_closure_target (insn_t *, reloc_ref_t *);
 extern void start_operator_relocation (SCHEME_OBJECT *, reloc_ref_t *);
 extern insn_t * read_uuo_target (SCHEME_OBJECT *, reloc_ref_t *);
-extern void i386_reset_hook (void);
+extern void i386_reset_hook (tctx_t*);
 
 extern int ia32_cpuid_needed;
 

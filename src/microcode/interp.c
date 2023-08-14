@@ -44,9 +44,9 @@ typedef enum
 static inline int_action_t
 re_eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check (2, tctx_stack (tctx));
-  stack_push (exp, tctx_stack (tctx));
-  stack_push (env, tctx_stack (tctx));
+  stack_check (2, tctx);
+  stack_push (exp, tctx);
+  stack_push (env, tctx);
   return INT_ACTION_EVAL;
 }
 
@@ -124,17 +124,17 @@ make_extended_procedure (SCHEME_OBJECT lambda, SCHEME_OBJECT env)
 static inline int_action_t
 eval_access (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check (CONTINUATION_SIZE, tctx_stack (tctx));
-  push_cont_env (RC_EXECUTE_ACCESS_FINISH, exp, env, tctx_stack (tctx));
+  stack_check (CONTINUATION_SIZE, tctx);
+  push_cont_env (RC_EXECUTE_ACCESS_FINISH, exp, env, tctx);
   return eval_subproblem (access_environment (exp), env, tctx);
 }
 
 static inline int_action_t
 eval_assignment (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check (CONTINUATION_SIZE + 1, tctx_stack (tctx));
-  stack_push (env, tctx_stack (tctx));
-  push_cont_rc (RC_EXECUTE_ASSIGNMENT_FINISH, exp, tctx_stack (tctx));
+  stack_check (CONTINUATION_SIZE + 1, tctx);
+  stack_push (env, tctx);
+  push_cont_rc (RC_EXECUTE_ASSIGNMENT_FINISH, exp, tctx);
   return eval_subproblem (assignment_value (exp), env, tctx);
 }
 
@@ -142,18 +142,18 @@ static inline int_action_t
 eval_combination (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
   unsigned long n_args = combination_size (exp) - 1;
-  stack_check (CONTINUATION_SIZE + 2 + n_args, tctx_stack (tctx));
-  decrement_sp (n_args, tctx_stack (tctx));
-  stack_push (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n_args), tctx_stack (tctx));
+  stack_check (CONTINUATION_SIZE + 2 + n_args, tctx);
+  decrement_sp (n_args, tctx);
+  stack_push (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n_args), tctx);
   if (n_args == 0)
     {
-      stack_push (make_apply_frame_header (1), tctx_stack (tctx));
-      push_cont_rc (RC_COMB_APPLY_FUNCTION, exp, tctx_stack (tctx));
+      stack_push (make_apply_frame_header (1), tctx);
+      push_cont_rc (RC_COMB_APPLY_FUNCTION, exp, tctx);
     }
   else
     {
-      stack_push (env, tctx_stack (tctx));
-      push_cont_rc (RC_COMB_SAVE_VALUE, exp, tctx_stack (tctx));
+      stack_push (env, tctx);
+      push_cont_rc (RC_COMB_SAVE_VALUE, exp, tctx);
     }
   return eval_subproblem (combination_expr (exp, n_args), env, tctx);
 }
@@ -178,16 +178,16 @@ eval_compiled_entry (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 static inline int_action_t
 eval_conditional (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check ((CONTINUATION_SIZE + 1), tctx_stack (tctx));
-  push_cont_env (RC_CONDITIONAL_DECIDE, exp, env, tctx_stack (tctx));
+  stack_check ((CONTINUATION_SIZE + 1), tctx);
+  push_cont_env (RC_CONDITIONAL_DECIDE, exp, env, tctx);
   return eval_subproblem (conditional_predicate (exp), env, tctx);
 }
 
 static inline int_action_t
 eval_definition (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check ((CONTINUATION_SIZE + 1), tctx_stack (tctx));
-  push_cont_env (RC_EXECUTE_DEFINITION_FINISH, exp, env, tctx_stack (tctx));
+  stack_check ((CONTINUATION_SIZE + 1), tctx);
+  push_cont_env (RC_EXECUTE_DEFINITION_FINISH, exp, env, tctx);
   return eval_subproblem (definition_value (exp), env, tctx);
 }
 
@@ -200,8 +200,8 @@ eval_delay (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 static inline int_action_t
 eval_disjunction (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check (CONTINUATION_SIZE + 1, tctx_stack (tctx));
-  push_cont_env (RC_DISJUNCTION_DECIDE, exp, env, tctx_stack (tctx));
+  stack_check (CONTINUATION_SIZE + 1, tctx);
+  push_cont_env (RC_DISJUNCTION_DECIDE, exp, env, tctx);
   return eval_subproblem (disjunction_predicate (exp), env, tctx);
 }
 
@@ -226,8 +226,8 @@ eval_scode_quote (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 static inline int_action_t
 eval_sequence (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  stack_check ((CONTINUATION_SIZE + 1), tctx_stack (tctx));
-  push_cont_env (RC_EXECUTE_SEQUENCE_FINISH, exp, env, tctx_stack (tctx));
+  stack_check ((CONTINUATION_SIZE + 1), tctx);
+  push_cont_env (RC_EXECUTE_SEQUENCE_FINISH, exp, env, tctx);
   return eval_subproblem (sequence_1 (exp), env, tctx);
 }
 
@@ -243,9 +243,8 @@ eval_variable (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
   /* Back out of the evaluation. */
   if (code == PRIM_INTERRUPT)
     {
-      sstack_t* s = tctx_stack (tctx);
-      stack_check (CONTINUATION_SIZE + 1, s);
-      push_cont_env (RC_EVAL_ERROR, exp, env, s);
+      stack_check (CONTINUATION_SIZE + 1, tctx);
+      push_cont_env (RC_EVAL_ERROR, exp, env, tctx);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -332,20 +331,19 @@ cont_comb_apply_function (tctx_t* tctx)
 static inline int_action_t
 cont_comb_save_value (SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val = get_single_val (tctx);
-  unsigned long arg = ((OBJECT_DATUM (stack_ref (0, tctx_stack (tctx)))) - 1);
-  stack_set (1 + arg, val, tctx_stack (tctx));
-  stack_set (1, (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, arg)), tctx_stack (tctx));
+  unsigned long arg = OBJECT_DATUM (stack_ref (0, tctx)) - 1;
+  stack_set (1 + arg, val, tctx);
+  stack_set (1, (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, arg)), tctx);
   /* DO NOT count on the type code being NMVector here, since
      the stack parser may create them with #F! */
   if (arg > 0)
-    push_cont_env (RC_COMB_SAVE_VALUE, exp, env, tctx_stack (tctx));
+    push_cont_env (RC_COMB_SAVE_VALUE, exp, env, tctx);
   else
     {
-      stack_push (make_apply_frame_header (combination_size (exp)),
-                  tctx_stack (tctx));
-      push_cont_rc (RC_COMB_APPLY_FUNCTION, exp, tctx_stack (tctx));
+      stack_push (make_apply_frame_header (combination_size (exp)), tctx);
+      push_cont_rc (RC_COMB_APPLY_FUNCTION, exp, tctx);
     }
   SCHEME_OBJECT new_exp = combination_expr (exp, arg);
   reuse_subproblem (new_exp, env, tctx);
@@ -356,7 +354,7 @@ static inline int_action_t
 cont_conditional_decide (SCHEME_OBJECT exp, tctx_t* tctx)
 {
   end_subproblem (tctx);
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val = get_single_val (tctx);
   SCHEME_OBJECT new_exp
     = ((val == SHARP_F)
@@ -370,7 +368,7 @@ cont_disjunction_decide (SCHEME_OBJECT exp, tctx_t* tctx)
 {
   /* Return predicate if it isn't #F; else do ALTERNATIVE */
   end_subproblem (tctx);
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val = get_single_val (tctx);
   if (val != SHARP_F)
     return single_val (val, tctx);
@@ -380,15 +378,14 @@ cont_disjunction_decide (SCHEME_OBJECT exp, tctx_t* tctx)
 static inline int_action_t
 cont_redo_evaluation (SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   return eval_reduction (exp, env, tctx);
 }
 
 static inline int_action_t
 cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
-  sstack_t* s = tctx_stack (tctx);
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val;
   long code = (lookup_variable (env, access_name (exp), (&val)));
   switch (code)
@@ -398,13 +395,13 @@ cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       return single_val (val, tctx);
 
     case PRIM_INTERRUPT:
-      push_cont_rc (RC_EXECUTE_ACCESS_FINISH, exp, s);
-      push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), s);
+      push_cont_rc (RC_EXECUTE_ACCESS_FINISH, exp, tctx);
+      push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), tctx);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
 
     default:
-      push_cont (ret, exp, s);
+      push_cont (ret, exp, tctx);
       return eval_error (code, tctx);
     }
 }
@@ -412,7 +409,7 @@ cont_access_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 static inline int_action_t
 cont_assignment_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val = get_single_val (tctx);
   SCHEME_OBJECT variable = assignment_name (exp);
   SCHEME_OBJECT old_val;
@@ -425,11 +422,11 @@ cont_assignment_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       end_subproblem (tctx);
       return single_val (old_val, tctx);
     }
-  stack_push (env, tctx_stack (tctx));
-  push_cont (ret, exp, tctx_stack (tctx));
+  stack_push (env, tctx);
+  push_cont (ret, exp, tctx);
   if (code == PRIM_INTERRUPT)
     {
-      push_cont_rc (RC_RESTORE_VALUE, val, tctx_stack (tctx));
+      push_cont_rc (RC_RESTORE_VALUE, val, tctx);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -439,7 +436,7 @@ cont_assignment_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 static inline int_action_t
 cont_definition_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   SCHEME_OBJECT val = get_single_val (tctx);
   SCHEME_OBJECT name = definition_name (exp);
   long code = (define_variable (env, name, val));
@@ -448,11 +445,11 @@ cont_definition_finish (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       end_subproblem (tctx);
       return single_val (name, tctx);
     }
-  stack_push (env, tctx_stack (tctx));
-  push_cont (ret, exp, tctx_stack (tctx));
+  stack_push (env, tctx);
+  push_cont (ret, exp, tctx);
   if (code == PRIM_INTERRUPT)
     {
-      push_cont_rc (RC_RESTORE_VALUE, val, tctx_stack (tctx));
+      push_cont_rc (RC_RESTORE_VALUE, val, tctx);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -463,8 +460,8 @@ static inline int_action_t
 cont_hardware_trap (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
   /* This just reinvokes the handler */
-  SCHEME_OBJECT info = (stack_ref (0, tctx_stack (tctx)));
-  push_cont (ret, exp, tctx_stack (tctx));
+  SCHEME_OBJECT info = (stack_ref (0, tctx));
+  push_cont (ret, exp, tctx);
   SCHEME_OBJECT handler
     = ((VECTOR_P (fixed_objects))
        ? (VECTOR_REF (fixed_objects, TRAP_HANDLER))
@@ -475,10 +472,10 @@ cont_hardware_trap (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
       termination_trap (tctx);
       /*NOTREACHED*/
     }
-  stack_check ((STACK_ENV_EXTRA_SLOTS + 2), tctx_stack (tctx));
-  stack_push (info, tctx_stack (tctx));
-  stack_push (handler, tctx_stack (tctx));
-  stack_push ((make_apply_frame_header (2)), tctx_stack (tctx));
+  stack_check ((STACK_ENV_EXTRA_SLOTS + 2), tctx);
+  stack_push (info, tctx);
+  stack_push (handler, tctx);
+  stack_push ((make_apply_frame_header (2)), tctx);
   return INT_ACTION_APPLY_PROC;
 }
 
@@ -499,7 +496,7 @@ cont_end_of_computation (tctx_t* tctx)
 static inline int_action_t
 cont_internal_apply_val (tctx_t* tctx)
 {
-  stack_set (1, (get_single_val (tctx)), tctx_stack (tctx));
+  stack_set (1, (get_single_val (tctx)), tctx);
   return INT_ACTION_APPLY_PROC;
 }
 
@@ -517,7 +514,7 @@ cont_normal_gc_done (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
   if (GC_NEEDED_P (gc_space_needed))
     termination_gc_out_of_space (tctx);
   gc_space_needed = 0;
-  EXIT_CRITICAL_SECTION ({ push_cont (ret, exp, tctx_stack (tctx)); });
+  EXIT_CRITICAL_SECTION ({ push_cont (ret, exp, tctx); });
   return single_val (exp, tctx);
 }
 
@@ -530,28 +527,26 @@ cont_normal_gc_done (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 static inline int_action_t
 cont_restore_dont_copy_history (SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  increment_sp (1, s);    // obsolete field
+  increment_sp (1, tctx);       // obsolete field
   set_history (exp, tctx);
-  set_restore_history_offset (stack_pop (s), tctx);
+  set_restore_history_offset (stack_pop (tctx), tctx);
   return INT_ACTION_APPLY_CONT;
 }
 
 static inline int_action_t
 cont_restore_history (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   if (!restore_history (exp, tctx))
     {
-      push_cont (ret, exp, s);
-      stack_check (CONTINUATION_SIZE, s);
-      push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), s);
+      push_cont (ret, exp, tctx);
+      stack_check (CONTINUATION_SIZE, tctx);
+      push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), tctx);
       REQUEST_GC (HEAP_AVAILABLE);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  increment_sp (1, s); // obsolete field
-  set_restore_history_offset_and_mark (stack_pop (s), tctx);
+  increment_sp (1, tctx);       // obsolete field
+  set_restore_history_offset_and_mark (stack_pop (tctx), tctx);
   return INT_ACTION_APPLY_CONT;
 }
 
@@ -565,7 +560,7 @@ cont_restore_int_mask (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
   if (!PENDING_INTERRUPTS_P)
     return INT_ACTION_APPLY_CONT;
 
-  push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), tctx_stack (tctx));
+  push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), tctx);
   setup_interrupt (PENDING_INTERRUPTS (), tctx);
   return INT_ACTION_APPLY_PROC;
 }
@@ -575,7 +570,7 @@ cont_stack_marker (tctx_t* tctx)
 {
   // Frame consists of the return code followed by two objects.  The first
   // object has already been popped into exp, so just pop the second arg.
-  increment_sp (1, tctx_stack (tctx));
+  increment_sp (1, tctx);
   return INT_ACTION_APPLY_CONT;
 }
 
@@ -583,7 +578,7 @@ static inline int_action_t
 cont_sequence_finish (SCHEME_OBJECT exp, tctx_t* tctx)
 {
   end_subproblem (tctx);
-  SCHEME_OBJECT env = stack_pop (tctx_stack (tctx));
+  SCHEME_OBJECT env = stack_pop (tctx);
   return eval_reduction (sequence_2 (exp), env, tctx);
 }
 
@@ -621,12 +616,11 @@ DEF_CC_RETURN (reenter_compiled_code)
 static int_action_t
 apply_cont (tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  if (!RETURN_CODE_P (stack_ref (0, s)))
+  if (!RETURN_CODE_P (stack_ref (0, tctx)))
     Microcode_Termination (TERM_BAD_STACK, tctx);
 
-  SCHEME_OBJECT ret = stack_pop (s);
-  SCHEME_OBJECT exp = stack_pop (s);
+  SCHEME_OBJECT ret = stack_pop (tctx);
+  SCHEME_OBJECT exp = stack_pop (tctx);
   switch (OBJECT_DATUM (ret))
     {
     case RC_COMB_APPLY_FUNCTION:
@@ -692,7 +686,7 @@ apply_cont (tctx_t* tctx)
 #endif
 #endif
     default:
-      push_cont (ret, exp, s);
+      push_cont (ret, exp, tctx);
       Do_Micro_Error (ERR_INAPPLICABLE_CONTINUATION, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -703,28 +697,27 @@ apply_cont (tctx_t* tctx)
 static int_action_t
 apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   if (!IMPLEMENTED_PRIMITIVE_P (proc))
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_UNIMPLEMENTED_PRIMITIVE, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  unsigned long n_args = apply_frame_n_args (s);
+  unsigned long n_args = apply_frame_n_args (tctx);
   if (PRIMITIVE_ARITY (proc) == LEXPR_PRIMITIVE_ARITY)
     set_primitive_lexpr_actuals (n_args, tctx);
   else if (PRIMITIVE_ARITY (proc) != n_args)
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 
   // Primitives don't need header and proc:
-  increment_sp (2, s);
+  increment_sp (2, tctx);
 #ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
-    Print_Primitive (proc, s);
+    Print_Primitive (proc, tctx);
 #endif
   interpreter_state_t* state = interpreter_state (tctx);
   void* position = state->dstack_position;
@@ -750,15 +743,14 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
       outf_flush_error();
     }
 #endif
-  increment_sp (n_args, s);
+  increment_sp (n_args, tctx);
   return single_val (val, tctx);
 }
 
 static int_action_t
 apply_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  unsigned long frame_size = apply_frame_size (s);
+  unsigned long frame_size = apply_frame_size (tctx);
   SCHEME_OBJECT lambda = procedure_lambda (proc);
   {
     SCHEME_OBJECT names = lambda_names (lambda);
@@ -766,14 +758,14 @@ apply_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
         && ((OBJECT_TYPE (lambda) != TC_LEXPR)
             || (frame_size < VECTOR_LENGTH (names))))
       {
-        push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+        push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
         Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
         return INT_ACTION_APPLY_PROC;
       }
   }
   if (GC_NEEDED_P (frame_size + 1))
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (tctx), tctx);
       REQUEST_GC (frame_size + 1);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
@@ -781,16 +773,15 @@ apply_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
   SCHEME_OBJECT* end = Free + 1 + frame_size;
   SCHEME_OBJECT env = MAKE_POINTER_OBJECT (TC_ENVIRONMENT, Free);
   (*Free++) = MAKE_OBJECT (TC_MANIFEST_VECTOR, frame_size);
-  increment_sp (1, s); // discard header
+  increment_sp (1, tctx);       // discard header
   while (Free < end)
-    (*Free++) = stack_pop (s);
+    (*Free++) = stack_pop (tctx);
   return eval_reduction (lambda_body (lambda), env, tctx);
 }
 
 static int_action_t
 apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT lambda = procedure_lambda (proc);
   unsigned long nnames = VECTOR_LENGTH (elambda_names (lambda));
   unsigned long reqs = elambda_reqs (lambda);
@@ -799,11 +790,11 @@ apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
   unsigned long nfixed = reqs + opts;
   unsigned long nparams = nfixed + rest;
   unsigned long naux = nnames - nparams;
-  unsigned long nargs = apply_frame_n_args (s);
+  unsigned long nargs = apply_frame_n_args (tctx);
 
   if ((nargs < reqs) || ((rest == 0) && (nargs > nfixed)))
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -816,20 +807,20 @@ apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
       + ((nargs > nfixed) ? (2 * (nargs - nfixed)) : 0);
   if (GC_NEEDED_P (nwords))
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (tctx), tctx);
       REQUEST_GC (nwords);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  increment_sp (1, s); // discard header
+  increment_sp (1, tctx);       // discard header
   SCHEME_OBJECT* scan = Free;
   SCHEME_OBJECT env = MAKE_POINTER_OBJECT (TC_ENVIRONMENT, scan);
   *scan++ = MAKE_OBJECT (TC_MANIFEST_VECTOR, size);
   if (nargs <= nfixed)
     {
-      *scan++ = stack_pop (s); // proc
+      *scan++ = stack_pop (tctx); // proc
       for (unsigned int i = 0; i < nargs; i += 1)
-        *scan++ = stack_pop (s);
+        *scan++ = stack_pop (tctx);
       for (unsigned int i = nargs; i < nfixed; i += 1)
         *scan++ = DEFAULT_OBJECT;
       if (rest == 1)
@@ -841,16 +832,16 @@ apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
     {
       /* assert (rest == 1) */
       SCHEME_OBJECT list = MAKE_POINTER_OBJECT (TC_LIST, scan + size);
-      *scan++ = stack_pop (s); // proc
+      *scan++ = stack_pop (tctx); // proc
       for (unsigned int i = 0; i < nfixed; i += 1)
-        *scan++ = stack_pop (s);
+        *scan++ = stack_pop (tctx);
       *scan++ = list;
       for (unsigned int i = 0; i < naux; i += 1)
         *scan++ = UNASSIGNED_OBJECT;
       /* Now scan == OBJECT_ADDRESS (list) */
       for (unsigned int i = nfixed; i < nargs; i += 1)
         {
-          *scan++ = stack_pop (s);
+          *scan++ = stack_pop (tctx);
           *scan = MAKE_POINTER_OBJECT (TC_LIST, scan + 1);
           scan += 1;
         }
@@ -863,14 +854,13 @@ apply_extended_procedure (SCHEME_OBJECT proc, tctx_t* tctx)
 static int_action_t
 apply_control_point (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  if (apply_frame_size (s) != 2)
+  if (apply_frame_size (tctx) != 2)
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_WRONG_NUMBER_OF_ARGUMENTS, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  SCHEME_OBJECT val = apply_frame_first_arg (s);
+  SCHEME_OBJECT val = apply_frame_first_arg (tctx);
   unpack_control_point (proc, tctx);
   reset_history (tctx);
   return single_val (val, tctx);
@@ -879,44 +869,42 @@ apply_control_point (SCHEME_OBJECT proc, tctx_t* tctx)
 static int_action_t
 apply_entity (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  unsigned long frame_size = apply_frame_size (s);
+  unsigned long frame_size = apply_frame_size (tctx);
   SCHEME_OBJECT data = entity_data (proc);
   if (VECTOR_P (data) && (frame_size < VECTOR_LENGTH (data))
       && (VECTOR_REF (data, frame_size) != SHARP_F)
       && (VECTOR_REF (data, 0)
           == VECTOR_REF (fixed_objects, ARITY_DISPATCHER_TAG)))
-    set_apply_frame_proc (VECTOR_REF (data, frame_size), s);
+    set_apply_frame_proc (VECTOR_REF (data, frame_size), tctx);
   else
     {
-      increment_sp (1, s); // discard header
-      stack_push (entity_operator (proc), s);
-      stack_push (make_apply_frame_header (frame_size + 1), s);
+      increment_sp (1, tctx);   // discard header
+      stack_push (entity_operator (proc), tctx);
+      stack_push (make_apply_frame_header (frame_size + 1), tctx);
     }
   /* This must be done to prevent an infinite push loop by
      an entity whose handler is the entity itself or some
      other such loop.  Of course, it will die if stack overflow
      interrupts are disabled.  */
-  stack_check (0, s);
+  stack_check (0, tctx);
   return INT_ACTION_APPLY_PROC;
 }
 
 static int_action_t
 apply_record (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT applicator = record_applicator (proc);
   if (applicator == SHARP_F)
     {
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
-  unsigned long frame_size = apply_frame_size (s);
-  increment_sp (1, s); // discard header
-  stack_push (applicator, s);
-  stack_push (make_apply_frame_header (frame_size + 1), s);
-  stack_check (0, s); // see above
+  unsigned long frame_size = apply_frame_size (tctx);
+  increment_sp (1, tctx);       // discard header
+  stack_push (applicator, tctx);
+  stack_push (make_apply_frame_header (frame_size + 1), tctx);
+  stack_check (0, tctx);        // see above
   return INT_ACTION_APPLY_PROC;
 }
 
@@ -924,9 +912,8 @@ apply_record (SCHEME_OBJECT proc, tctx_t* tctx)
 static int_action_t
 apply_compiled_entry (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  guarantee_cc_return (1 + apply_frame_size (s));
-  long dispatch_code = apply_compiled_procedure ();
+  guarantee_cc_return (1 + apply_frame_size (tctx), tctx);
+  long dispatch_code = apply_compiled_procedure (tctx);
   switch (dispatch_code)
     {
     case PRIM_DONE:
@@ -940,13 +927,13 @@ apply_compiled_entry (SCHEME_OBJECT proc, tctx_t* tctx)
       return INT_ACTION_APPLY_PROC;
 
     case PRIM_APPLY_INTERRUPT:
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       setup_interrupt (PENDING_INTERRUPTS (), tctx);
       return INT_ACTION_APPLY_PROC;
 
     case ERR_INAPPLICABLE_OBJECT:
     case ERR_WRONG_NUMBER_OF_ARGUMENTS:
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (dispatch_code, true, tctx);
       return INT_ACTION_APPLY_PROC;
 
@@ -976,16 +963,15 @@ apply_proc (tctx_t* tctx)
        registers are cleared to avoid holding onto garbage if a
        garbage collection occurs.  */
 
-  sstack_t* s = tctx_stack (tctx);
   if (PENDING_INTERRUPTS_P)
     {
       unsigned long interrupts = (PENDING_INTERRUPTS ());
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (s), s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (tctx), tctx);
       setup_interrupt (interrupts, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 
-  SCHEME_OBJECT proc = (apply_frame_proc (s));
+  SCHEME_OBJECT proc = (apply_frame_proc (tctx));
   switch (OBJECT_TYPE (proc))
     {
     case TC_PRIMITIVE:
@@ -1012,7 +998,7 @@ apply_proc (tctx_t* tctx)
 #endif
 
     default:
-      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, s);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
       Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
@@ -1026,7 +1012,6 @@ void
 interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
   int_action_t action = eval (exp, env, tctx);
-  sstack_t* s = tctx_stack (tctx);
   while (true)
     switch (action)
       {
@@ -1039,8 +1024,8 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
         break;
 
       case INT_ACTION_EVAL:
-        SCHEME_OBJECT exp2 = stack_pop (s);
-        SCHEME_OBJECT env2 = stack_pop (s);
+        SCHEME_OBJECT exp2 = stack_pop (tctx);
+        SCHEME_OBJECT env2 = stack_pop (tctx);
         action = eval (exp2, env2, tctx);
         break;
 

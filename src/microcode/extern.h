@@ -50,8 +50,8 @@ USA.
    extern bool Bignum_Debug;
    extern bool Print_Errors;
 
-   extern bool verify_heap (sstack_t*);
-   extern void Pop_Return_Break_Point (sstack_t*);
+   extern bool verify_heap (tctx_t*);
+   extern void Pop_Return_Break_Point (tctx_t*);
    extern unsigned int debug_slotno;
    extern unsigned int debug_nslots;
    extern unsigned int local_slotno;
@@ -314,7 +314,7 @@ extern void termination_eof (tctx_t*) NORETURN;
 extern void termination_signal (const char*) NORETURN;
 
 extern void setup_interrupt (unsigned long, tctx_t*);
-extern void preserve_interrupt_mask (sstack_t*);
+extern void preserve_interrupt_mask (tctx_t*);
 extern void canonicalize_primitive_context (tctx_t*);
 extern void back_out_of_primitive (tctx_t*);
 
@@ -332,7 +332,7 @@ extern void Debug_Stack_Trace (SCHEME_OBJECT*);
 extern void Show_Env (SCHEME_OBJECT);
 extern void Print_Return (SCHEME_OBJECT, const char *);
 extern void Print_Expression (SCHEME_OBJECT, const char *);
-extern void Print_Primitive (SCHEME_OBJECT, sstack_t*);
+extern void Print_Primitive (SCHEME_OBJECT, tctx_t*);
 
 
 #endif /* not SCM_EXTERN_H */

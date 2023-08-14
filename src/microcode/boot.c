@@ -166,13 +166,12 @@ start_scheme (tctx_t* tctx)
 
   INITIALIZE_INTERRUPTS (0);
 
-  sstack_t* s = tctx_stack (tctx);
-  stack_check (CONTINUATION_SIZE, s);
-  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, s);
+  stack_check (CONTINUATION_SIZE, tctx);
+  push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, tctx);
   trapping = false;
 
   /* Go to it! */
-  if (! (stack_can_push_p (0, s) && Free <= heap_alloc_limit))
+  if (! (stack_can_push_p (0, tctx) && Free <= heap_alloc_limit))
     {
       outf_fatal ("Configuration won't hold initial data.\n");
       termination_init_error ();

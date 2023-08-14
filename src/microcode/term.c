@@ -84,16 +84,15 @@ attempt_termination_backout (int code, tctx_t* tctx)
     return;
 
   unsigned int frame_size = (code == TERM_NO_ERROR_HANDLER) ? 5 : 4;
-  sstack_t* s = tctx_stack (tctx);
-  stack_check (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + frame_size, s);
-  push_cont_rc (RC_HALT, LONG_TO_UNSIGNED_FIXNUM (code), s);
+  stack_check (CONTINUATION_SIZE + STACK_ENV_EXTRA_SLOTS + frame_size, tctx);
+  push_cont_rc (RC_HALT, LONG_TO_UNSIGNED_FIXNUM (code), tctx);
   if (code == TERM_NO_ERROR_HANDLER)
-    stack_push (LONG_TO_UNSIGNED_FIXNUM (death_blow), s);
-  // stack_push (GET_VAL, s);
-  // stack_push (GET_ENV, s);
-  // stack_push (GET_EXP, s);
-  stack_push (handler, s);	/* The handler function */
-  stack_push (make_apply_frame_header (frame_size), s);
+    stack_push (LONG_TO_UNSIGNED_FIXNUM (death_blow), tctx);
+  // stack_push (GET_VAL, tctx);
+  // stack_push (GET_ENV, tctx);
+  // stack_push (GET_EXP, tctx);
+  stack_push (handler, tctx);	/* The handler function */
+  stack_push (make_apply_frame_header (frame_size), tctx);
   abort_to_interpreter (PRIM_NO_TRAP_APPLY, tctx);
 }
 
@@ -168,7 +167,7 @@ termination_suffix_trace (int code, tctx_t* tctx)
   if (Trace_On_Error && tctx != 0)
     {
       outf_error ("\n\n**** Stack trace ****\n\n");
-      Back_Trace (ERROR_OUTPUT, stack_pointer (tctx_stack (tctx)));
+      Back_Trace (ERROR_OUTPUT, stack_pointer (tctx));
     }
   termination_suffix (code, 1, true, tctx);
 }

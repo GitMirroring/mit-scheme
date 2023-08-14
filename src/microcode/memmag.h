@@ -68,9 +68,6 @@ USA.
 #define ADDRESS_IN_HEAP_P(address)					\
   (((address) >= heap_start) && ((address) < heap_end))
 
-#define ADDRESS_IN_STACK_P(address)					\
-  (((address) >= stack_start) && ((address) < stack_end))
-
 #define ADDRESS_IN_CONSTANT_P(address)					\
   (((address) >= constant_start) && ((address) < constant_end))
 

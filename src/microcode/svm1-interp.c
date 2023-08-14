@@ -199,7 +199,7 @@ compute_little_endian_p (void)
 }
 
 void
-initialize_svm1 (void)
+initialize_svm1 (tctx_t* tctx)
 {
   unsigned int i;
 

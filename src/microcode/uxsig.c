@@ -1044,9 +1044,9 @@ print_interactive_help (void)
 }
 
 static void
-invoke_soft_reset (const char * name)
+invoke_soft_reset (const char* name)
 {
-  soft_reset ();
+  soft_reset (current_tctx ());
   /*NOTREACHED*/
 }
 
@@ -1084,7 +1084,7 @@ reset_query (SIGCONTEXT_T * scp)
 	case 'N':
 	  CLEAR_CRITICAL_SECTION_HOOK ();
 	  EXIT_CRITICAL_SECTION ({});
-	  hard_reset (scp);
+	  hard_reset (scp, current_tctx ());
 	  FALLTHROUGH ();
 	case 'P':
 	default:
@@ -1092,7 +1092,7 @@ reset_query (SIGCONTEXT_T * scp)
 	}
     }
   if (userio_confirm ("Do you really want to reset? [Y or N] "))
-    hard_reset (scp);
+    hard_reset (scp, current_tctx ());
 }
 
 #define USERIO_READ_LINE_OK		0

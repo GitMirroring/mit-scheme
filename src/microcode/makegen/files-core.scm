@@ -81,7 +81,6 @@ USA.
 "purutl"
 "regex"
 "rgxprim"
-"stack"
 "step"
 "storage"
 "string"

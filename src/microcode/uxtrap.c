@@ -102,8 +102,7 @@ static int saved_signo;
 static SIGINFO_T saved_info;
 static SIGCONTEXT_T * saved_scp;
 
-static void continue_from_trap
-  (int, SIGINFO_T, SIGCONTEXT_T *);
+static void continue_from_trap (int, SIGINFO_T, SIGCONTEXT_T*, tctx_t*);
 
 #ifdef CC_SUPPORT_P
    static SCHEME_OBJECT * find_heap_address (unsigned long);
@@ -116,20 +115,21 @@ static void continue_from_trap
 static void setup_trap_frame
   (int,
    SIGINFO_T,
-   SIGCONTEXT_T *,
-   struct trap_recovery_info *,
-   SCHEME_OBJECT *);
+   SIGCONTEXT_T*,
+   struct trap_recovery_info*,
+   SCHEME_OBJECT*,
+   tctx_t*);
 
 static void initialize_ux_signal_codes (void);
 static SCHEME_OBJECT find_signal_code_name (int, SIGINFO_T, SIGCONTEXT_T *);
 
 static enum pc_location classify_pc
-  (unsigned long, SCHEME_OBJECT **, unsigned int *);
+  (unsigned long, tctx_t*, SCHEME_OBJECT**, unsigned int*);
 
-static void trap_normal_termination (void);
-static void trap_immediate_termination (void);
-static void trap_dump_core (void);
-static void trap_recover (void);
+static void trap_normal_termination (tctx_t*);
+static void trap_immediate_termination (tctx_t*);
+static void trap_dump_core (tctx_t*);
+static void trap_recover (tctx_t*);
 
 void
 UX_initialize_trap_recovery (void)
@@ -149,36 +149,36 @@ OS_set_trap_state (enum trap_state state)
 }
 
 void
-hard_reset (SIGCONTEXT_T * scp)
+hard_reset (SIGCONTEXT_T* scp, tctx_t* tctx)
 {
   /* 0 is an invalid signal, it means a user requested reset. */
-  continue_from_trap (0, 0, scp);
+  continue_from_trap (0, 0, scp, tctx);
 }
 
 void
-soft_reset (void)
+soft_reset (tctx_t* tctx)
 {
   /* Called synchronously. */
   struct trap_recovery_info trinfo;
-  SCHEME_OBJECT * new_stack_pointer
-    = ((SP_OK_P (stack_pointer)) ? stack_pointer : 0);
-  if (GET_PRIMITIVE != SHARP_F)
+  SCHEME_OBJECT* sp = stack_pointer (tctx);
+  SCHEME_OBJECT* new_sp = valid_stack_pointer_p (sp, tctx) ? sp : 0;
+  if (get_primitive (tctx) != SHARP_F)
     {
-      (trinfo . state) = STATE_PRIMITIVE;
-      (trinfo . pc_info_1) = GET_PRIMITIVE;
-      (trinfo . pc_info_2) = (ULONG_TO_FIXNUM (GET_LEXPR_ACTUALS));
-      (trinfo . extra_trap_info) = SHARP_F;
+      trinfo.state = STATE_PRIMITIVE;
+      trinfo.pc_info_1 = get_primitive (tctx);
+      trinfo.pc_info_2 = primitive_lexpr_actuals (tctx);
+      trinfo.extra_trap_info = SHARP_F;
     }
   else
     {
-      (trinfo . state) = STATE_UNKNOWN;
-      (trinfo . pc_info_1) = SHARP_F;
-      (trinfo . pc_info_2) = SHARP_F;
-      (trinfo . extra_trap_info) = SHARP_F;
+      trinfo.state = STATE_UNKNOWN;
+      trinfo.pc_info_1 = SHARP_F;
+      trinfo.pc_info_2 = SHARP_F;
+      trinfo.extra_trap_info = SHARP_F;
     }
   if (!ADDRESS_IN_HEAP_P (Free))
     Free = heap_alloc_limit;	/* Let's hope this works. */
-  setup_trap_frame (0, 0, 0, (&trinfo), new_stack_pointer);
+  setup_trap_frame (0, 0, 0, (&trinfo), new_sp, tctx);
 }
 
 #ifdef CC_SUPPORT_P
@@ -189,25 +189,26 @@ find_ccblock (unsigned long pc)
   unsigned int index;
 
   block_addr = 0;
-  classify_pc (pc, (&block_addr), (&index));
+  classify_pc (pc, current_tctx (), &block_addr, &index);
   return ((block_addr != 0) ? (MAKE_CC_BLOCK (block_addr)) : SHARP_F);
 }
 #endif
 
 void
-trap_handler (const char * message,
+trap_handler (const char* message,
 	      int signo,
 	      SIGINFO_T info,
-	      SIGCONTEXT_T * scp)
+	      SIGCONTEXT_T* scp)
 {
-  int code = (SIGINFO_CODE (info));
-  bool stack_overflowed_p = (STACK_OVERFLOWED_P ());
+  tctx_t* tctx = current_tctx ();
+  int code = SIGINFO_CODE (info);
+  bool stack_overflowed_p = (stack_overwritten_p (tctx));
   enum trap_state old_trap_state = trap_state;
 
   if (old_trap_state == trap_state_exitting_hard)
     _exit (1);
   if (old_trap_state == trap_state_exitting_soft)
-    trap_immediate_termination ();
+    trap_immediate_termination (tctx);
   trap_state = trap_state_trapped;
 
   if (WITHIN_CRITICAL_SECTION_P ())
@@ -249,7 +250,7 @@ trap_handler (const char * message,
 		   ((WITHIN_CRITICAL_SECTION_P ()) ? "extremely " : ""));
 	}
       else
-	trap_immediate_termination ();
+	trap_immediate_termination (tctx);
       break;
 
     case trap_state_recover:
@@ -261,12 +262,12 @@ trap_handler (const char * message,
 	  saved_signo = signo;
 	  saved_info = info;
 	  saved_scp = scp;
-	  trap_recover ();
+	  trap_recover (tctx);
 	}
       break;
 
     case trap_state_exit:
-      termination_trap ();
+      termination_trap (tctx);
       break;
 
     default:
@@ -296,19 +297,19 @@ trap_handler (const char * message,
 	       trap_query_choices))
 	{
 	case 'I':
-	  trap_immediate_termination ();
+	  trap_immediate_termination (tctx);
 	  break;
 	case 'D':
-	  trap_dump_core ();
+	  trap_dump_core (tctx);
 	  break;
 	case '\0':
 	  /* Error in IO. Assume everything scrod. */
 	case 'N':
 	case 'Q':
-	  trap_normal_termination ();
+	  trap_normal_termination (tctx);
 	  break;
 	case 'R':
-	  trap_recover ();
+	  trap_recover (tctx);
 	  break;
 	}
     }
@@ -340,10 +341,10 @@ trap_handler (const char * message,
 } while (0)
 
 static void
-continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
+continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T* scp, tctx_t* tctx)
 {
   unsigned long pc = (SIGCONTEXT_PC (scp));
-  SCHEME_OBJECT primitive = GET_PRIMITIVE;
+  SCHEME_OBJECT primitive = get_primitive (tctx);
   SCHEME_OBJECT * block_addr;
   unsigned int index;
   SCHEME_OBJECT * new_sp = 0;
@@ -357,12 +358,12 @@ continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
 #endif
 
   /* Choose new SP and encode location data.  */
-  switch (classify_pc (pc, (&block_addr), (&index)))
+  switch (classify_pc (pc, tctx, &block_addr, &index))
     {
     case pcl_primitive:
-      new_sp = stack_pointer;
+      new_sp = stack_pointer (tctx);
       SET_RECOVERY_INFO
-	(STATE_PRIMITIVE, primitive, (ULONG_TO_FIXNUM (GET_LEXPR_ACTUALS)));
+	(STATE_PRIMITIVE, primitive, primitive_lexpr_actuals (tctx));
       break;
 
     case pcl_heap:
@@ -386,7 +387,7 @@ continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
 
     case pcl_utility:
 #ifdef CC_SUPPORT_P
-      new_sp = stack_pointer;
+      new_sp = stack_pointer (tctx);
       SET_RECOVERY_INFO (STATE_UTILITY, (ULONG_TO_FIXNUM (index)), UNSPECIFIC);
       break;
 #endif
@@ -400,30 +401,32 @@ continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
 #endif
 
     case pcl_unknown:
-      if (((OBJECT_TYPE (primitive)) == TC_PRIMITIVE)
-	  && (ADDRESS_IN_STACK_P (stack_pointer)) && (ALIGNED_P (stack_pointer))
-	  && (ADDRESS_IN_HEAP_P (Free)) && (ALIGNED_P (Free)))
+      new_sp = stack_pointer (tctx);
+      if (OBJECT_TYPE (primitive) == TC_PRIMITIVE
+	  && address_in_stack_p (new_sp, tctx)
+          && ALIGNED_P (new_sp)
+	  && ADDRESS_IN_HEAP_P (Free)
+          && ALIGNED_P (Free))
 	{
 #ifdef ENABLE_DEBUGGING_TOOLS
 	  if (GC_Debug == true)
 	    /* Note where this presumption is employed. */
 	    outf_error_line (";Warning: trap at 0x%lx assumed a primitive", pc);
 #endif
-	  new_sp = stack_pointer;
-	  SET_RECOVERY_INFO
-	    (STATE_PRIMITIVE, primitive, (ULONG_TO_FIXNUM (GET_LEXPR_ACTUALS)));
+	  SET_RECOVERY_INFO (STATE_PRIMITIVE,
+                             primitive,
+                             ULONG_TO_FIXNUM (primitive_lexpr_actuals (tctx)));
 	  break;
 	}
       new_sp = 0;
-      SET_RECOVERY_INFO
-	(STATE_UNKNOWN,
-	 (LONG_TO_UNSIGNED_FIXNUM (pc)),
-	 UNSPECIFIC);
+      SET_RECOVERY_INFO (STATE_UNKNOWN,
+                         LONG_TO_UNSIGNED_FIXNUM (pc),
+                         UNSPECIFIC);
       break;
     }
 
   /* Sanity-check the new SP.  */
-  if (! ((ADDRESS_IN_STACK_P (new_sp)) && (ALIGNED_P (new_sp))))
+  if (! (address_in_stack_p (new_sp, tctx) && ALIGNED_P (new_sp)))
     new_sp = 0;
 
   /* Sanity-check Free.  */
@@ -455,7 +458,7 @@ continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
       (*Free++) = ((SCHEME_OBJECT) (*scan++));
   }
 
-  setup_trap_frame (signo, info, scp, (&recovery_info), new_sp);
+  setup_trap_frame (signo, info, scp, (&recovery_info), new_sp, tctx);
 }
 
 /* Find the compiled code block in area that contains `pc'.  */
@@ -555,11 +558,11 @@ static struct trap_recovery_info dummy_recovery_info =
 };
 
 static void
-continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
+continue_from_trap (int signo, SIGINFO_T info, SIGCONTEXT_T* scp, tctx_t* tctx)
 {
   if (Free < heap_alloc_limit)
     Free = heap_alloc_limit;
-  setup_trap_frame (signo, info, scp, (&dummy_recovery_info), 0);
+  setup_trap_frame (signo, info, scp, (&dummy_recovery_info), 0, tctx);
 }
 
 #ifdef CC_SUPPORT_P
@@ -582,9 +585,10 @@ find_constant_address (unsigned long pc)
 static void
 setup_trap_frame (int signo,
 		  SIGINFO_T info,
-		  SIGCONTEXT_T * scp,
-		  struct trap_recovery_info * trinfo,
-		  SCHEME_OBJECT * new_stack_pointer)
+		  SIGCONTEXT_T* scp,
+		  struct trap_recovery_info* trinfo,
+		  SCHEME_OBJECT* new_stack_pointer,
+                  tctx_t* tctx)
 {
   unsigned long saved_mask = GET_INT_MASK;
   SCHEME_OBJECT handler;
@@ -600,7 +604,7 @@ setup_trap_frame (int signo,
     {
       fprintf (stderr, "There is no trap handler for recovery!\n");
       fflush (stderr);
-      termination_trap ();
+      termination_trap (tctx);
     }
 
   signal_name =
@@ -612,44 +616,37 @@ setup_trap_frame (int signo,
     REQUEST_GC (0);
 
   if (new_stack_pointer != 0)
-    stack_pointer = new_stack_pointer;
+    set_stack_pointer (new_stack_pointer, tctx);
   else
     {
-      INITIALIZE_STACK ();
-     Will_Push (CONTINUATION_SIZE);
-      SET_RC (RC_END_OF_COMPUTATION);
-      SET_EXP (SHARP_F);
-      SAVE_CONT ();
-     Pushed ();
+      stack_reset (tctx);
+      stack_check (CONTINUATION_SIZE, tctx);
+      push_cont_rc (RC_END_OF_COMPUTATION, SHARP_F, tctx);
     }
 
- Will_Push (7 + CONTINUATION_SIZE);
-  STACK_PUSH (trinfo -> extra_trap_info);
-  STACK_PUSH (trinfo -> pc_info_2);
-  STACK_PUSH (trinfo -> pc_info_1);
-  STACK_PUSH (trinfo -> state);
-  STACK_PUSH (BOOLEAN_TO_OBJECT (new_stack_pointer != 0));
-  STACK_PUSH (find_signal_code_name (signo, info, scp));
-  STACK_PUSH (signal_name);
-  SET_RC (RC_HARDWARE_TRAP);
-  SET_EXP (long_to_integer (signo));
-  SAVE_CONT ();
- Pushed ();
+  stack_check (7 + CONTINUATION_SIZE, tctx);
+  stack_push (trinfo->extra_trap_info, tctx);
+  stack_push (trinfo->pc_info_2, tctx);
+  stack_push (trinfo->pc_info_1, tctx);
+  stack_push (trinfo->state, tctx);
+  stack_push (BOOLEAN_TO_OBJECT (new_stack_pointer != 0), tctx);
+  stack_push (find_signal_code_name (signo, info, scp), tctx);
+  stack_push (signal_name, tctx);
+  push_cont_rc (RC_HARDWARE_TRAP, long_to_integer (signo), tctx);
 
-  if ((new_stack_pointer != 0)
+  if (new_stack_pointer != 0
       /* This may want to do it in other cases, but this may be enough. */
-      && ((trinfo -> state) == STATE_COMPILED_CODE))
-    stop_history ();
-  history_register = (make_dummy_history ());
+      && trinfo->state == STATE_COMPILED_CODE)
+    stop_history (tctx);
+  set_history (make_dummy_history (), tctx);
 
- Will_Push (STACK_ENV_EXTRA_SLOTS + 2);
-  STACK_PUSH (signal_name);
-  STACK_PUSH (handler);
-  PUSH_APPLY_FRAME_HEADER (1);
- Pushed ();
+  stack_check (STACK_ENV_EXTRA_SLOTS + 2, tctx);
+  stack_push (signal_name, tctx);
+  stack_push (handler, tctx);
+  stack_push (make_apply_frame_header (2), tctx);
 
   SET_INTERRUPT_MASK (saved_mask);
-  abort_to_interpreter (PRIM_APPLY);
+  abort_to_interpreter (PRIM_APPLY, tctx);
 }
 
 static void
@@ -710,8 +707,9 @@ find_signal_code_name (int signo, SIGINFO_T info, SIGCONTEXT_T * scp)
 
 static enum pc_location
 classify_pc (unsigned long pc,
-	     SCHEME_OBJECT ** r_block_addr,
-	     unsigned int * r_index)
+             tctx_t* tctx,
+	     SCHEME_OBJECT** r_block_addr,
+	     unsigned int* r_index)
 {
 #ifdef CC_SUPPORT_P
   if (PC_ALIGNED_P (pc))
@@ -751,7 +749,7 @@ classify_pc (unsigned long pc,
 		(*r_index) = index;
 	      return (pcl_utility);
 	    }
-	  if ((OBJECT_TYPE (GET_PRIMITIVE)) == TC_PRIMITIVE)
+	  if (OBJECT_TYPE (get_primitive (tctx)) == TC_PRIMITIVE)
 	    return (pcl_primitive);
 	}
 #endif /* ADDRESS_UCODE_P */
@@ -765,14 +763,14 @@ classify_pc (unsigned long pc,
 }
 
 static void
-trap_normal_termination (void)
+trap_normal_termination (tctx_t* tctx)
 {
   trap_state = trap_state_exitting_soft;
-  termination_trap ();
+  termination_trap (tctx);
 }
 
 static void
-trap_immediate_termination (void)
+trap_immediate_termination (tctx_t* tctx)
 {
   trap_state = trap_state_exitting_hard;
   OS_restore_external_state ();
@@ -780,20 +778,20 @@ trap_immediate_termination (void)
 }
 
 static void
-trap_dump_core (void)
+trap_dump_core (tctx_t* tctx)
 {
-  if (! (option_disable_core_dump))
+  if (!option_disable_core_dump)
     UX_dump_core ();
   else
     {
       fputs (">> Core dumps are disabled - Terminating normally.\n", stdout);
       fflush (stdout);
-      termination_trap ();
+      termination_trap (tctx);
     }
 }
 
 static void
-trap_recover (void)
+trap_recover (tctx_t* tctx)
 {
   if (WITHIN_CRITICAL_SECTION_P ())
     {
@@ -801,5 +799,5 @@ trap_recover (void)
       EXIT_CRITICAL_SECTION ({});
     }
   reset_interruptable_extent ();
-  continue_from_trap (saved_signo, saved_info, saved_scp);
+  continue_from_trap (saved_signo, saved_info, saved_scp, tctx);
 }

@@ -174,7 +174,7 @@ invoke_utility (unsigned int code,
 }
 
 void
-initialize_C_interface (void)
+initialize_C_interface (tctx_t* tctx)
 {
   if (initial_entry_number == (-1))
     /* TRAMPOLINE_FUDGE allows for future growth of max_trampoline.  */
@@ -184,9 +184,9 @@ initialize_C_interface (void)
 	 && ((initialize_compiled_code_blocks ()) == 0)))
     {
       if (GET_PRIMITIVE != SHARP_F)
-	signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH);
+	signal_error_from_primitive (ERR_FASLOAD_COMPILED_MISMATCH, tctx);
       outf_fatal ("error initializing compiled code.\n");
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
 }
 

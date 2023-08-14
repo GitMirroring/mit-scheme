@@ -104,7 +104,7 @@ typedef struct
 #define ENTER_SCHEME_CONTINUATION ENTER_SCHEME_ENTRY
 
 extern long C_to_interface (void *);
-extern void initialize_svm1 (void);
+extern void initialize_svm1 (tctx_t*);
 extern insn_t * read_uuo_target (SCHEME_OBJECT *);
 extern unsigned int read_u16 (insn_t *);
 extern unsigned long svm_export_instruction_pointer (unsigned long pc);

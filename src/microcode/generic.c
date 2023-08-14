@@ -31,9 +31,9 @@ USA.
 #define INDIRECT(slot, arity)                                           \
 {                                                                       \
   canonicalize_primitive_context (tctx);                                \
-  stack_check (STACK_ENV_EXTRA_SLOTS + 1, tctx_stack (tctx));           \
-  stack_push (VECTOR_REF (fixed_objects, (slot)), tctx_stack (tctx));   \
-  stack_push (make_apply_frame_header ((arity) + 1), tctx_stack (tctx)); \
+  stack_check (STACK_ENV_EXTRA_SLOTS + 1, tctx);                        \
+  stack_push (VECTOR_REF (fixed_objects, (slot)), tctx);                \
+  stack_push (make_apply_frame_header ((arity) + 1), tctx);             \
   PRIMITIVE_ABORT (PRIM_APPLY);                                         \
   /*NOTREACHED*/                                                        \
   PRIMITIVE_RETURN (UNSPECIFIC);                                        \

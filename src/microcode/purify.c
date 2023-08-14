@@ -45,10 +45,9 @@ Copy OBJECT from the heap into constant/pure space.\n\
 PURE? is ignored.")
 {
   PRIMITIVE_HEADER (3);
-  sstack_t* s = tctx_stack (tctx);
 
   canonicalize_primitive_context (tctx);
-  if (stack_overwritten_p (s))
+  if (stack_overwritten_p (tctx))
     stack_death ("PURIFY");
 
   SCHEME_OBJECT object = (ARG_REF (1));
@@ -59,21 +58,21 @@ PURE? is ignored.")
   heap_reserved = safety_margin;
   purify (object, tctx);
 
-  stack_push (CONTINUATION_SIZE, s);
+  stack_push (CONTINUATION_SIZE, tctx);
   push_cont_rc (RC_NORMAL_GC_DONE,
                 (cons (SHARP_T,
                        (ULONG_TO_FIXNUM ((HEAP_AVAILABLE > gc_space_needed)
                                          ? HEAP_AVAILABLE - gc_space_needed
                                          : 0)))),
-                s);
+                tctx);
 
   RENAME_CRITICAL_SECTION ("purify daemon");
   SCHEME_OBJECT daemon = VECTOR_REF (fixed_objects, GC_DAEMON);
   if (daemon != SHARP_F)
     {
-      stack_check (2, s);
-      stack_push (daemon, s);
-      stack_push (make_apply_frame_header (1), s);
+      stack_check (2, tctx);
+      stack_push (daemon, tctx);
+      stack_push (make_apply_frame_header (1), tctx);
       PRIMITIVE_ABORT (PRIM_APPLY);
     }
   PRIMITIVE_ABORT (PRIM_POP_RETURN);
@@ -84,8 +83,7 @@ PURE? is ignored.")
 static void
 purify (SCHEME_OBJECT object, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  if (stack_overwritten_p (s))
+  if (stack_overwritten_p (tctx))
     stack_death ("PURIFY");
 
   open_tospace (constant_alloc_next);

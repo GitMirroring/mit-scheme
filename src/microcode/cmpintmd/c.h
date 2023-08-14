@@ -151,7 +151,7 @@ typedef SCHEME_OBJECT insn_t;
 #define EMBEDDED_CLOSURE_ADDRS_P 1
 #define READ_COMPILED_CLOSURE_TARGET(a, r) (read_compiled_closure_target (a))
 
-extern void initialize_C_interface (void);
+extern void initialize_C_interface (tctx_t*);
 extern SCHEME_OBJECT initialize_C_compiled_block (const char *);
 extern insn_t * read_uuo_target (SCHEME_OBJECT *);
 extern insn_t * read_compiled_closure_target (insn_t *);

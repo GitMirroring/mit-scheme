@@ -32,7 +32,6 @@ USA.
 
 #include "cmpint.h"
 #include "registers.h"
-#include "stack.h"
 #include "tcontext.h"
 
 /* Interrupt bits -- scanned from LSB (1) to MSB (16) */
@@ -79,21 +78,21 @@ static inline void
 set_interrupt_mask (unsigned long mask, tctx_t* tctx)
 {
   SET_INT_MASK (mask & INT_Mask);
-  compiler_setup_interrupt (tctx_stack (tctx));
+  compiler_setup_interrupt (tctx);
 }
 
 static inline void
 request_interrupt (unsigned int code, tctx_t* tctx)
 {
   SET_INT_CODE (GET_INT_CODE | code);
-  compiler_setup_interrupt (tctx_stack (tctx));
+  compiler_setup_interrupt (tctx);
 }
 
 static inline void
 clear_interrupt (unsigned long code, tctx_t* tctx)
 {
   SET_INT_CODE (GET_INT_CODE &~ (code));
-  compiler_setup_interrupt (tctx_stack (tctx));
+  compiler_setup_interrupt (tctx);
 }
 
 static inline void
@@ -101,7 +100,7 @@ initialize_interrupts (unsigned long mask, tctx_t* tctx)
 {
   SET_INT_MASK (mask);
   SET_INT_CODE (0);
-  compiler_setup_interrupt (tctx_stack (tctx));
+  compiler_setup_interrupt (tctx);
 }
 
 #define SET_INTERRUPT_MASK(mask) (set_interrupt_mask ((mask), current_tctx ()))

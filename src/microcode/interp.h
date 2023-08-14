@@ -31,14 +31,14 @@ USA.
 #define SCM_INTERP_H 1
 
 #include "object.h"
-#include "stack.h"
+#include "tcontext.h"
 
 static inline void
-stack_check (unsigned long n, sstack_t* s)
+stack_check (unsigned long n, tctx_t* tctx)
 {
-  if (stack_can_push_p (n, s))
+  if (stack_can_push_p (n, tctx))
     {
-      if (stack_overwritten_p (s))
+      if (stack_overwritten_p (tctx))
         stack_death ("stack_check");
       REQUEST_INTERRUPT (INT_Stack_Overflow);
     }
@@ -59,24 +59,24 @@ extern int abort_to_interpreter_argument (tctx_t*);
 /* Note: push_cont must match the definitions in sdata.h */
 
 static inline void
-push_cont (SCHEME_OBJECT ret, SCHEME_OBJECT obj, sstack_t* s)
+push_cont (SCHEME_OBJECT ret, SCHEME_OBJECT obj, tctx_t* tctx)
 {
-  stack_push (obj, s);
-  stack_push (ret, s);
+  stack_push (obj, tctx);
+  stack_push (ret, tctx);
 }
 
 static inline void
-push_cont_rc (unsigned long rc, SCHEME_OBJECT obj, sstack_t* s)
+push_cont_rc (unsigned long rc, SCHEME_OBJECT obj, tctx_t* tctx)
 {
-  push_cont ((MAKE_RETURN_CODE (rc)), obj, s);
+  push_cont (MAKE_RETURN_CODE (rc), obj, tctx);
 }
 
 static inline void
 push_cont_env (unsigned long rc, SCHEME_OBJECT obj, SCHEME_OBJECT env,
-               sstack_t* s)
+               tctx_t* tctx)
 {
-  stack_push (env, s);
-  push_cont ((MAKE_RETURN_CODE (rc)), obj, s);
+  stack_push (env, tctx);
+  push_cont (MAKE_RETURN_CODE (rc), obj, tctx);
 }
 
 static inline SCHEME_OBJECT
@@ -98,39 +98,39 @@ apply_frame_header_n_args (SCHEME_OBJECT header)
 }
 
 static inline SCHEME_OBJECT
-apply_frame_header (sstack_t* s)
+apply_frame_header (tctx_t* tctx)
 {
-  return stack_ref (0, s);
+  return stack_ref (0, tctx);
 }
 
 static inline SCHEME_OBJECT
-apply_frame_proc (sstack_t* s)
+apply_frame_proc (tctx_t* tctx)
 {
-  return stack_ref (1, s);
+  return stack_ref (1, tctx);
 }
 
 static inline void
-set_apply_frame_proc (SCHEME_OBJECT proc, sstack_t* s)
+set_apply_frame_proc (SCHEME_OBJECT proc, tctx_t* tctx)
 {
-  return stack_set (1, proc, s);
+  return stack_set (1, proc, tctx);
 }
 
 static inline SCHEME_OBJECT
-apply_frame_first_arg (sstack_t* s)
+apply_frame_first_arg (tctx_t* tctx)
 {
-  return stack_ref (2, s);
+  return stack_ref (2, tctx);
 }
 
 static inline unsigned long
-apply_frame_size (sstack_t* s)
+apply_frame_size (tctx_t* tctx)
 {
-  return apply_frame_header_size (apply_frame_header (s));
+  return apply_frame_header_size (apply_frame_header (tctx));
 }
 
 static inline unsigned long
-apply_frame_n_args (sstack_t* s)
+apply_frame_n_args (tctx_t* tctx)
 {
-  return apply_frame_header_n_args (apply_frame_header (s));
+  return apply_frame_header_n_args (apply_frame_header (tctx));
 }
 
 extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);

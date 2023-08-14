@@ -37,7 +37,6 @@ USA.
 #include "types.h"		/* Type code numbers */
 #include "const.h"		/* Various named constants */
 #include "object.h"		/* Scheme object representation */
-#include "stack.h"              // Stack abstraction
 #include "tcontext.h"            // Per-thread context
 #include "registers.h"          // Register block
 #include "intrpt.h"		/* Interrupt processing macros */
@@ -49,7 +48,6 @@ USA.
 #include "errors.h"		/* Error code numbers */
 #include "returns.h"		/* Return code numbers */
 #include "fixobj.h"		/* Format of fixed objects vector */
-#include "stack.h"		/* Macros for stack (stacklet) manipulation */
 #include "interp.h"		/* Macros for interpreter */
 #include "outf.h"		/* Formatted output for errors */
 #include "bkpt.h"		/* Shadows some defaults */

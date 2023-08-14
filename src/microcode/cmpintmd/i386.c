@@ -254,7 +254,7 @@ store_trampoline_insns (insn_t * entry, uint8_t code)
 } while (0)
 
 void
-i386_reset_hook (void)
+i386_reset_hook (tctx_t* tctx)
 {
   unsigned int offset = (COMPILER_REGBLOCK_N_FIXED * (sizeof (SCHEME_OBJECT)));
   unsigned char * esi_value = ((unsigned char *) Registers);
@@ -262,13 +262,13 @@ i386_reset_hook (void)
 
   /* These must match machines/i386/lapgen.scm */
 
-  SETUP_REGISTER (asm_scheme_to_interface); 		/* 0 */
+  SETUP_REGISTER (asm_scheme_to_interface);		/* 0 */
   SETUP_REGISTER (asm_scheme_to_interface_call);	/* 1 */
 
   if (offset != ESI_TRAMPOLINE_TO_INTERFACE_OFFSET)
     {
       outf_fatal ("\ni386_reset_hook: ESI_TRAMPOLINE_TO_INTERFACE_OFFSET\n");
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
   SETUP_REGISTER (asm_trampoline_to_interface);		/* 2 */
 

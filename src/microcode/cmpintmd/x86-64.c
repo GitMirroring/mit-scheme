@@ -310,20 +310,20 @@ store_trampoline_insns (insn_t * entry, uint8_t code)
 } while (0)
 
 void
-x86_64_reset_hook (void)
+x86_64_reset_hook (tctx_t* tctx)
 {
   int offset = (COMPILER_REGBLOCK_N_FIXED * (sizeof (SCHEME_OBJECT)));
   unsigned char * rsi_value = ((unsigned char *) Registers);
 
   /* These must match machines/x86-64/lapgen.scm */
 
-  SETUP_REGISTER (asm_scheme_to_interface); 		/* 0 */
+  SETUP_REGISTER (asm_scheme_to_interface);		/* 0 */
   SETUP_REGISTER (asm_scheme_to_interface_call);	/* 1 */
 
   if (offset != RSI_TRAMPOLINE_TO_INTERFACE_OFFSET)
     {
       outf_fatal ("\nx86_64_reset_hook: RSI_TRAMPOLINE_TO_INTERFACE_OFFSET\n");
-      Microcode_Termination (TERM_EXIT);
+      Microcode_Termination (TERM_EXIT, tctx);
     }
   SETUP_REGISTER (asm_trampoline_to_interface);		/* 2 */
 

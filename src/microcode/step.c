@@ -53,13 +53,12 @@ install_traps (SCHEME_OBJECT state)
 DEFINE_PRIMITIVE ("PRIMITIVE-EVAL-STEP", Prim_eval_step, 3, 3, 0)
 {
   PRIMITIVE_HEADER (3);
-  sstack_t* s = tctx_stack (tctx);
   CHECK_ARG (3, HUNK3_P);
   SCHEME_OBJECT exp = (ARG_REF (1));
   SCHEME_OBJECT env = (ARG_REF (2));
   SCHEME_OBJECT hooks = (ARG_REF (3));
   canonicalize_primitive_context (tctx);
-  pop_primitive_frame (3, s);
+  pop_primitive_frame (3, tctx);
   install_traps (hooks);
   add_val (exp, tctx);
   add_val (env, tctx);
@@ -78,7 +77,6 @@ DEFINE_PRIMITIVE ("PRIMITIVE-EVAL-STEP", Prim_eval_step, 3, 3, 0)
 DEFINE_PRIMITIVE ("PRIMITIVE-APPLY-STEP", Prim_apply_step, 3, 3, 0)
 {
   PRIMITIVE_HEADER (3);
-  sstack_t* s = tctx_stack (tctx);
   canonicalize_primitive_context (tctx);
   CHECK_ARG (3, HUNK3_P);
   SCHEME_OBJECT procedure = ARG_REF (1);
@@ -97,12 +95,12 @@ DEFINE_PRIMITIVE ("PRIMITIVE-APPLY-STEP", Prim_apply_step, 3, 3, 0)
       error_wrong_type_arg (2);
   }
 
-  pop_primitive_frame (3, s);
+  pop_primitive_frame (3, tctx);
   install_traps (hooks);
 
-  stack_check (n_args + STACK_ENV_EXTRA_SLOTS + 1, s);
+  stack_check (n_args + STACK_ENV_EXTRA_SLOTS + 1, tctx);
   {
-    SCHEME_OBJECT* end = stack_pointer (s);
+    SCHEME_OBJECT* end = stack_pointer (tctx);
     SCHEME_OBJECT* start = end - n_args;
     SCHEME_OBJECT* scan_stack = start;
     SCHEME_OBJECT scan_list = argument_list;
@@ -111,10 +109,10 @@ DEFINE_PRIMITIVE ("PRIMITIVE-APPLY-STEP", Prim_apply_step, 3, 3, 0)
         *scan_stack++ = PAIR_CAR (scan_list);
         scan_list = PAIR_CDR (scan_list);
       }
-    set_stack_pointer (start, s);
+    set_stack_pointer (start, tctx);
   }
-  stack_push (procedure, s);
-  stack_push (make_apply_frame_header (n_args + 1), s);
+  stack_push (procedure, tctx);
+  stack_push (make_apply_frame_header (n_args + 1), tctx);
   abort_to_interpreter (PRIM_NO_TRAP_APPLY, tctx);
 }
 
@@ -133,7 +131,7 @@ DEFINE_PRIMITIVE ("PRIMITIVE-RETURN-STEP", Prim_return_step, 2, 2, 0)
   SCHEME_OBJECT value = (ARG_REF (1));
   SCHEME_OBJECT hooks = (ARG_REF (2));
 
-  pop_primitive_frame (2, tctx_stack (tctx));
+  pop_primitive_frame (2, tctx);
   install_traps (hooks);
   add_val (value, tctx);
   abort_to_interpreter (PRIM_NO_TRAP_POP_RETURN, tctx);

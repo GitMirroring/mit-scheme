@@ -33,7 +33,7 @@ void
 debug_back_trace (outf_channel stream)
 {
   outf (stream, "*** Scheme Microcode Back Trace: ***\n");
-  Back_Trace (stream, stack_pointer (tctx_stack (current_tctx ())));
+  Back_Trace (stream, stack_pointer (current_tctx ()));
   outf (stream, "*** End of Back Trace ***\n");
   outf_flush (stream);
 }

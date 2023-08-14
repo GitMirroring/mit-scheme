@@ -134,18 +134,17 @@ setup_interrupt (unsigned long masked_interrupts, tctx_t* tctx)
     = VECTOR_REF (interrupt_handlers, interrupt_number);
 
   stop_history (tctx);
-  sstack_t* s = tctx_stack (tctx);
-  preserve_interrupt_mask (s);
+  preserve_interrupt_mask (tctx);
 
   /* Now make an environment frame for use in calling the
      user supplied interrupt routine.  It will be given two arguments:
      the UNmasked interrupt requests, and the currently enabled
      interrupts.  */
-  stack_check (STACK_ENV_EXTRA_SLOTS + 3, s);
-  stack_push (ULONG_TO_FIXNUM (GET_INT_MASK), s);
-  stack_push (ULONG_TO_FIXNUM (GET_INT_CODE), s);
-  stack_push (interrupt_handler, s);
-  stack_push (make_apply_frame_header (3), s);
+  stack_check (STACK_ENV_EXTRA_SLOTS + 3, tctx);
+  stack_push (ULONG_TO_FIXNUM (GET_INT_MASK), tctx);
+  stack_push (ULONG_TO_FIXNUM (GET_INT_CODE), tctx);
+  stack_push (interrupt_handler, tctx);
+  stack_push (make_apply_frame_header (3), tctx);
 
   /* Turn off interrupts: */
   SET_INTERRUPT_MASK (interrupt_mask);
@@ -175,7 +174,7 @@ error_death (long code, const char* message, tctx_t* tctx)
   outf_fatal ("\nMicrocode Error: %s.\n", message);
   err_print (code, FATAL_OUTPUT);
   outf_error ("\n**** Stack Trace ****\n\n");
-  Back_Trace (ERROR_OUTPUT, stack_pointer (tctx_stack (tctx)));
+  Back_Trace (ERROR_OUTPUT, stack_pointer (tctx));
   termination_no_error_handler (tctx);
   /*NOTREACHED*/
 }
@@ -189,10 +188,10 @@ Stack_Death (tctx_t* tctx)
 }
 
 void
-preserve_interrupt_mask (sstack_t* s)
+preserve_interrupt_mask (tctx_t* tctx)
 {
-  stack_check (CONTINUATION_SIZE, s);
-  push_cont_rc (RC_RESTORE_INT_MASK, ULONG_TO_FIXNUM (GET_INT_MASK), s);
+  stack_check (CONTINUATION_SIZE, tctx);
+  push_cont_rc (RC_RESTORE_INT_MASK, ULONG_TO_FIXNUM (GET_INT_MASK), tctx);
 }
 
 /* canonicalize_primitive_context should be used by "unsafe"
@@ -204,25 +203,24 @@ preserve_interrupt_mask (sstack_t* s)
 void
 canonicalize_primitive_context (tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT primitive = get_primitive (tctx);
   assert (PRIMITIVE_P (primitive));
   unsigned long n_args = (PRIMITIVE_N_ARGUMENTS (primitive));
 
 #ifdef CC_SUPPORT_P
-  if (CC_RETURN_P (stack_ref (n_args, s)))
+  if (CC_RETURN_P (stack_ref (n_args, tctx)))
     {
       /* The primitive has been invoked from compiled code. */
-      stack_push (primitive, s);
-      stack_push (make_apply_frame_header (n_args + 1), s);
-      guarantee_interp_return ();
+      stack_push (primitive, tctx);
+      stack_push (make_apply_frame_header (n_args + 1), tctx);
+      guarantee_interp_return (tctx);
       set_primitive (SHARP_F, tctx);
       abort_to_interpreter (PRIM_APPLY, tctx);
       /*NOTREACHED*/
     }
 #endif
 
-  assert (RETURN_CODE_P (stack_ref (n_args, s)));
+  assert (RETURN_CODE_P (stack_ref (n_args, tctx)));
 }
 
 /* back_out_of_primitive sets the registers up so that the backout
@@ -232,14 +230,13 @@ canonicalize_primitive_context (tctx_t* tctx)
 void
 back_out_of_primitive (tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
   SCHEME_OBJECT prim = get_primitive (tctx);
   assert (PRIMITIVE_P (prim));
-  stack_push (prim, s);
-  stack_push (make_apply_frame_header (PRIMITIVE_N_ARGUMENTS (prim) + 1), s);
-  guarantee_interp_return ();
+  stack_push (prim, tctx);
+  stack_push (make_apply_frame_header (PRIMITIVE_N_ARGUMENTS (prim) + 1), tctx);
+  guarantee_interp_return (tctx);
   set_primitive (SHARP_F, tctx);
-  push_cont_rc (RC_INTERNAL_APPLY, SHARP_F, s);
+  push_cont_rc (RC_INTERNAL_APPLY, SHARP_F, tctx);
 }
 
 /* Useful error procedures */
@@ -654,28 +651,28 @@ interpreter_applicable_p (SCHEME_OBJECT object)
 void
 Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
 #ifdef ENABLE_DEBUGGING_TOOLS
   if (Print_Errors)
     {
-      SCHEME_OBJECT ret = stack_ref (0, s);
+      SCHEME_OBJECT ret = stack_ref (0, tctx);
       err_print (error_code, ERROR_OUTPUT);
       if (OBJECT_DATUM (ret) == RC_INTERNAL_APPLY
 	  || OBJECT_DATUM (ret) == RC_INTERNAL_APPLY_VAL)
 	{
 	  Print_Expression
-            (stack_ref (CONTINUATION_SIZE + STACK_ENV_FUNCTION, s),
+            (stack_ref (CONTINUATION_SIZE + STACK_ENV_FUNCTION, tctx),
 	     "Procedure");
 	  outf_error ("\n");
 	  {
             unsigned long nargs
               = apply_frame_header_n_args
-		  (stack_ref (CONTINUATION_SIZE + STACK_ENV_HEADER, s));
+		  (stack_ref (CONTINUATION_SIZE + STACK_ENV_HEADER, tctx));
 	    for (unsigned long i = 0; i < nargs; i += 1)
 	      {
 		outf_error ("Argument %ld: ", i + 1);
 		Print_Expression
-                  (stack_ref (CONTINUATION_SIZE + STACK_ENV_FIRST_ARG + i, s),
+                  (stack_ref (CONTINUATION_SIZE + STACK_ENV_FIRST_ARG + i,
+                              tctx),
                    "");
 		outf_error ("\n");
 	      }
@@ -683,9 +680,9 @@ Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
 	}
       else
 	{
-	  Print_Expression (stack_ref (1, s), "Expression");
+	  Print_Expression (stack_ref (1, tctx), "Expression");
 	  outf_error ("\n");
-          SCHEME_OBJECT env = stack_ref (2, s);
+          SCHEME_OBJECT env = stack_ref (2, tctx);
           if (GLOBAL_FRAME_P (env) || PROCEDURE_FRAME_P (env))
             {
 	      Print_Expression (env, "Environment");
@@ -700,7 +697,7 @@ Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
   if (Trace_On_Error)
     {
       outf_error ("\n\n**** Stack Trace ****\n\n");
-      Back_Trace (ERROR_OUTPUT, stack_pointer (s));
+      Back_Trace (ERROR_OUTPUT, stack_pointer (tctx));
     }
 
 #ifdef ENABLE_DEBUGGING_TOOLS
@@ -717,13 +714,14 @@ Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
 
   if (from_pop_return_p)
     {
-      stack_check (CONTINUATION_SIZE, s);
-      push_cont_rc (RC_POP_RETURN_ERROR, get_single_val (tctx), s);
+      stack_check (CONTINUATION_SIZE, tctx);
+      push_cont_rc (RC_POP_RETURN_ERROR, get_single_val (tctx), tctx);
     }
   else
     {
-      stack_check (CONTINUATION_SIZE + 1, s);
-      push_cont_env (RC_EVAL_ERROR, stack_ref (1, s), stack_ref (2, s), s);
+      stack_check (CONTINUATION_SIZE + 1, tctx);
+      push_cont_env (RC_EVAL_ERROR, stack_ref (1, tctx), stack_ref (2, tctx),
+                     tctx);
     }
 
   SCHEME_OBJECT handler = SHARP_F;
@@ -744,18 +742,18 @@ Do_Micro_Error (long error_code, bool from_pop_return_p, tctx_t* tctx)
 
   /* Return from error handler will re-enable interrupts & restore history */
   stop_history (tctx);
-  preserve_interrupt_mask (s);
+  preserve_interrupt_mask (tctx);
 
-  stack_check (STACK_ENV_EXTRA_SLOTS + 3, s);
+  stack_check (STACK_ENV_EXTRA_SLOTS + 3, tctx);
   /* Arg 2:     interrupt mask */
-  stack_push (ULONG_TO_FIXNUM (GET_INT_MASK), s);
+  stack_push (ULONG_TO_FIXNUM (GET_INT_MASK), tctx);
   /* Arg 1:     error code  */
   if (error_code == ERR_WITH_ARGUMENT || error_code == ERR_IN_SYSTEM_CALL)
-    stack_push (error_argument, s);
+    stack_push (error_argument, tctx);
   else
-    stack_push (long_to_integer (error_code), s);
-  stack_push (handler, s);
-  stack_push (make_apply_frame_header (3), s);
+    stack_push (long_to_integer (error_code), tctx);
+  stack_push (handler, tctx);
+  stack_push (make_apply_frame_header (3), tctx);
 
   /* Disable all interrupts */
   SET_INTERRUPT_MASK (0);
@@ -800,11 +798,10 @@ make_dummy_history (void)
 void
 save_history (unsigned long rc, tctx_t* tctx)
 {
-  sstack_t* s = tctx_stack (tctx);
-  stack_check (HISTORY_SIZE, s);
-  stack_push (SHARP_F, s);      // obsolete field
-  stack_push (get_restore_history_offset (tctx), s);
-  push_cont_rc (rc, unmarked_history (get_history (tctx)), s);
+  stack_check (HISTORY_SIZE, tctx);
+  stack_push (SHARP_F, tctx);      // obsolete field
+  stack_push (get_restore_history_offset (tctx), tctx);
+  push_cont_rc (rc, unmarked_history (get_history (tctx)), tctx);
   set_history (READ_DUMMY_HISTORY (), tctx);
 }
 
@@ -833,7 +830,7 @@ void
 stop_history (tctx_t* tctx)
 {
   save_history (RC_RESTORE_DONT_COPY_HISTORY, tctx);
-  set_restore_history_offset (stack_n_pushed (tctx_stack (tctx)), tctx);
+  set_restore_history_offset (stack_n_pushed (tctx), tctx);
 }
 
 void

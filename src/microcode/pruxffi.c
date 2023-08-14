@@ -454,7 +454,7 @@ cstack_lpop (char * tos, int bytes)
     {
       outf_error_line ("\ninternal error: C stack exhausted."
 		       "\tCould not pop %d bytes.", bytes);
-      signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+      signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
     }
   return (tos);
 }
@@ -465,7 +465,7 @@ cstack_pop (char * tos)
   if (tos < ffi_obstack.object_base)
     {
       outf_error_line ("\ninternal error: C stack over-popped.");
-      signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+      signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
     }
   (&ffi_obstack)->next_free = tos;
 }
@@ -532,14 +532,14 @@ callout_seal (CalloutTrampIn tramp)
       if (c_call_continue == SHARP_F)
 	{
 	  outf_error_line ("\nNo C-CALL-CONTINUE primitive!");
-	  signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+	  signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
 	}
     }
   cstack_depth += 1;
   CSTACK_PUSH (int, cstack_depth);
   CSTACK_PUSH (CalloutTrampIn, tramp);
 
-  SET_PRIMITIVE (c_call_continue);
+  set_primitive (c_call_continue, current_tctx ());
   alienate_float_environment ();
 }
 
@@ -559,7 +559,7 @@ callout_unseal (CalloutTrampIn expected)
   if (found != expected || depth != cstack_depth)
     {
       outf_error_line ("\ninternal error: slipped in 1st part of callout");
-      signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+      signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
     }
   cstack_pop (tos);
 }
@@ -597,7 +597,7 @@ DEFINE_PRIMITIVE ("C-CALL-CONTINUE", Prim_c_call_continue, 1, LEXPR, 0)
     if (depth != cstack_depth)
       {
 	outf_error_line ("\ninternal error: slipped in 2nd part of callout");
-	signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+	signal_error_from_primitive (ERR_EXTERNAL_RETURN, tctx);
       }
     val = tramp ();
     PRIMITIVE_RETURN (val);
@@ -620,7 +620,7 @@ callout_lunseal (CalloutTrampIn expected)
   if (depth != cstack_depth || found != expected)
     {
       outf_error_line ("\ninternal error: slipped in 2nd tramp of callout");
-      signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+      signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
     }
   return (tos);
 }
@@ -644,8 +644,10 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
 {
   /* Used by callback trampolines after saving the callback args on
      the CStack. */
-  SCM * saved_stack_pointer, * saved_last_return_code;
-  unsigned long nargs = GET_LEXPR_ACTUALS;
+  tctx_t* tctx = current_tctx ();
+  SCM* saved_stack_pointer;
+  SCM* saved_last_return_code;
+  unsigned long nargs = primitive_lexpr_actuals (tctx);
 
   if (run_callback == SHARP_F)
     {
@@ -660,8 +662,8 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
 	}
     }
 
-  if (GET_PRIMITIVE != c_call_continue)
-    abort_to_interpreter (ERR_CANNOT_RECURSE);
+  if (get_primitive (tctx) != c_call_continue)
+    abort_to_interpreter (ERR_CANNOT_RECURSE, tctx);
     /*NOTREACHED*/
 
   cstack_depth += 1;
@@ -669,48 +671,41 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
   CSTACK_PUSH (CallbackKernel, kernel);
 
   /* For a traceable stack... */
-  STACK_PUSH (c_call_continue);
-  PUSH_APPLY_FRAME_HEADER (nargs);
-  SET_RC (RC_INTERNAL_APPLY);
-  SET_EXP (c_call_continue);
-  SAVE_CONT ();
+  stack_push (c_call_continue, tctx);
+  stack_push (make_apply_frame_header (nargs + 1), tctx);
+  push_cont_rc (RC_INTERNAL_APPLY, c_call_continue, tctx);
 
-  saved_stack_pointer = stack_pointer;
+  saved_stack_pointer = stack_pointer (tctx);
   saved_last_return_code = last_return_code;
- Will_Push ((2 * CONTINUATION_SIZE) + STACK_ENV_EXTRA_SLOTS + 1);
-  SET_RC (RC_END_OF_COMPUTATION);
-  SET_EXP (run_callback);
-  SAVE_CONT ();
-  STACK_PUSH (run_callback);
-  PUSH_APPLY_FRAME_HEADER (0);
-  SET_RC (RC_INTERNAL_APPLY);
-  SET_EXP (run_callback);
-  SAVE_CONT ();
- Pushed ();
-  last_return_code = stack_pointer;
+  stack_check ((2 * CONTINUATION_SIZE) + STACK_ENV_EXTRA_SLOTS + 1, tctx);
+  push_cont_rc (RC_END_OF_COMPUTATION, run_callback, tctx);
+  stack_push (run_callback, tctx);
+  stack_push (make_apply_frame_header (1), tctx);
+  push_cont_rc (RC_INTERNAL_APPLY, run_callback, tctx);
+  last_return_code = stack_pointer (tctx);
   SET_EXP (SHARP_F);
   Re_Enter_Interpreter ();
 
-  if (stack_pointer != saved_stack_pointer
+  if (stack_pointer (tctx) != saved_stack_pointer
 #ifdef ENABLE_DEBUGGING_TOOLS
-      || ((STACK_REF (0)) != (MAKE_RETURN_CODE (RC_INTERNAL_APPLY)))
-      || ((STACK_REF (1)) != c_call_continue)
-      || ((STACK_REF (2)) != (MAKE_OBJECT (0, nargs+1)))
-      || ((STACK_REF (3)) != c_call_continue)
+      || stack_ref (0, tctx) != MAKE_RETURN_CODE (RC_INTERNAL_APPLY)
+      || stack_ref (1, tctx) != c_call_continue
+      || stack_ref (2, tctx) != MAKE_OBJECT (0, nargs+1)
+      || stack_ref (3, tctx) != c_call_continue
 #endif
       )
     {
-      SET_PRIMITIVE (c_call_continue);
-      SET_LEXPR_ACTUALS (0);
+      set_primitive (c_call_continue, tctx);
+      set_primitive_lexpr_actuals (0, tctx);
       outf_error_line ("\nWarning: stack slipped in callback.");
-      signal_error_from_primitive (ERR_STACK_HAS_SLIPPED);
+      signal_error_from_primitive (ERR_STACK_HAS_SLIPPED, tctx);
       /*NOTREACHED*/
     }
 
-  stack_pointer = STACK_LOC (4);
+  increment_sp (4, tctx);
   last_return_code = saved_last_return_code;
-  SET_PRIMITIVE (c_call_continue);
-  SET_LEXPR_ACTUALS (nargs);
+  set_primitive (c_call_continue, tctx);
+  set_primitive_lexpr_actuals (nargs, tctx);
 
   cstack_depth -= 1;
   alienate_float_environment ();
@@ -732,7 +727,7 @@ DEFINE_PRIMITIVE ("RUN-CALLBACK", Prim_run_callback, 0, 0, 0)
     if (depth != cstack_depth)
       {
 	outf_error_line ("\nWarning: C data stack slipped in run-callback!");
-	signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+	signal_error_from_primitive (ERR_EXTERNAL_RETURN, tctx);
       }
 
     kernel ();
@@ -758,7 +753,7 @@ callback_lunseal (CallbackKernel expected)
   if (depth != cstack_depth || found != expected)
     {
       outf_error_line ("\ninternal error: slipped in callback kernel");
-      signal_error_from_primitive (ERR_EXTERNAL_RETURN);
+      signal_error_from_primitive (ERR_EXTERNAL_RETURN, current_tctx ());
     }
   return (tos);
 }
@@ -775,20 +770,16 @@ callback_run_handler (long callback_id, SCM arglist)
      Push a Scheme callback handler apply frame.  (The RUN-CALLBACK
      primitive apply frame is already gone.) */
 
-  SCM handler, fixnum_id;
+  tctx_t* tctx = current_tctx ();
+  SCM handler = valid_callback_handler ();
+  SCM fixnum_id = valid_callback_id (callback_id);
 
-  handler = valid_callback_handler ();
-  fixnum_id = valid_callback_id (callback_id);
-
-  Will_Push (3 + STACK_ENV_EXTRA_SLOTS + CONTINUATION_SIZE);
-  STACK_PUSH (arglist);
-  STACK_PUSH (fixnum_id);
-  STACK_PUSH (handler);
-  PUSH_APPLY_FRAME_HEADER (2);
-  SET_RC (RC_INTERNAL_APPLY);
-  SET_EXP (run_callback);
-  SAVE_CONT ();
-  Pushed ();
+  stack_check (3 + STACK_ENV_EXTRA_SLOTS + CONTINUATION_SIZE, tctx);
+  stack_push (arglist, tctx);
+  stack_push (fixnum_id, tctx);
+  stack_push (handler, tctx);
+  stack_push (make_apply_frame_header (3), tctx);
+  push_cont_rc (RC_INTERNAL_APPLY, run_callback, tctx);
 }
 
 static SCM
@@ -803,8 +794,8 @@ valid_callback_handler (void)
     {
       outf_error_line ("\nWarning: bogus callback handler: 0x%x.",
 		       ((unsigned int) handler));
-      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true);
-      abort_to_interpreter (PRIM_APPLY);
+      Do_Micro_Error (ERR_INAPPLICABLE_OBJECT, true, current_tctx ());
+      abort_to_interpreter (PRIM_APPLY, current_tctx ());
       /* NOTREACHED */
     }
   return (handler);
@@ -817,7 +808,7 @@ valid_callback_id (long id)
 
   if (ULONG_TO_FIXNUM_P (id))
     return (ULONG_TO_FIXNUM (id));
-  signal_error_from_primitive (ERR_ARG_1_BAD_RANGE);
+  signal_error_from_primitive (ERR_ARG_1_BAD_RANGE, current_tctx ());
   /* NOTREACHED */
   return (FIXNUM_ZERO);
 }
@@ -1061,9 +1052,10 @@ pointer_value (void)
 void
 check_number_of_args (int num)
 {
-  if (GET_LEXPR_ACTUALS < num)
+  if (primitive_lexpr_actuals (current_tctx ()) < num)
     {
-      signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS);
+      signal_error_from_primitive (ERR_WRONG_NUMBER_OF_ARGUMENTS,
+                                   current_tctx ());
     }
 }
 
@@ -1118,29 +1110,32 @@ DEFINE_PRIMITIVE ("OUTF-ERROR", Prim_outf_error, 1, 1, 0)
 void
 re_enter_scheme (void)
 {
-  assert (GET_PRIMITIVE == c_call_continue);
-  back_out_of_primitive ();
+  tctx_t* tctx = current_tctx ();
+  assert (get_primitive (tctx) == c_call_continue);
+  back_out_of_primitive (tctx);
   Re_Enter_Interpreter ();
 
-  assert (GET_PRIMITIVE == SHARP_F);
+  assert (get_primitive (tctx) == SHARP_F);
   assert (GET_EXP == SHARP_F);
-  assert ((STACK_REF (0)) == (MAKE_RETURN_CODE (RC_INTERNAL_APPLY)));
-  assert ((STACK_REF (1)) == SHARP_F);
-  assert ((OBJECT_TYPE (STACK_REF (2))) == TC_FALSE);
-  assert ((STACK_REF (3)) == c_call_continue);
+  assert (stack_ref (0, tctx) == MAKE_RETURN_CODE (RC_INTERNAL_APPLY));
+  assert (stack_ref (1, tctx) == SHARP_F);
+  assert (OBJECT_TYPE (stack_ref (2, tctx)) == TC_FALSE);
+  assert (stack_ref (3, tctx) == c_call_continue);
 
-  SET_PRIMITIVE (c_call_continue);
-  SET_LEXPR_ACTUALS (APPLY_FRAME_HEADER_N_ARGS (STACK_REF (2)));
-  stack_pointer = STACK_LOC (4);
+  set_primitive (c_call_continue, tctx);
+  set_primitive_lexpr_actuals
+    (apply_frame_header_n_args (stack_ref (2, tctx)), tctx);
+  increment_sp (4, tctx);
   alienate_float_environment ();
 }
 
 void
 abort_to_c (void)
 {
-  assert (GET_PRIMITIVE == c_call_continue);
-  back_out_of_primitive ();
-  PRIMITIVE_ABORT (PRIM_RETURN_TO_C);
+  tctx_t* tctx = current_tctx ();
+  assert (get_primitive (tctx) == c_call_continue);
+  back_out_of_primitive (tctx);
+  abort_to_interpreter (PRIM_RETURN_TO_C, tctx);
   /* NOTREACHED */
 }
 

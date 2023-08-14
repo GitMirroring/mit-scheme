@@ -68,7 +68,7 @@ Given a compiled-code entry ADDRESS, return its offset into its block.")
 DEFINE_PRIMITIVE ("STACK-TOP-ADDRESS", Prim_stack_top_address, 0, 0, 0)
 {
   PRIMITIVE_HEADER (0);
-  PRIMITIVE_RETURN (ulong_to_integer (ADDRESS_TO_DATUM (STACK_BOTTOM)));
+  PRIMITIVE_RETURN (ulong_to_integer (ADDRESS_TO_DATUM (stack_end (tctx))));
 }
 
 DEFINE_PRIMITIVE ("STACK-ADDRESS-OFFSET", Prim_stack_address_offset, 1, 1, 0)
@@ -76,13 +76,12 @@ DEFINE_PRIMITIVE ("STACK-ADDRESS-OFFSET", Prim_stack_address_offset, 1, 1, 0)
   PRIMITIVE_HEADER (1);
 
   CHECK_ARG (1, CC_STACK_ENV_P);
-  {
-    SCHEME_OBJECT * address = (OBJECT_ADDRESS (ARG_REF (1)));
-    if (!ADDRESS_IN_STACK_P (address))
-      error_bad_range_arg (1);
-    PRIMITIVE_RETURN
-      (ulong_to_integer (SP_TO_N_PUSHED (address, stack_start, stack_end)));
-  }
+  SCHEME_OBJECT * address = (OBJECT_ADDRESS (ARG_REF (1)));
+  if (!address_in_stack_p (address, tctx))
+    error_bad_range_arg (1);
+  PRIMITIVE_RETURN
+    (ulong_to_integer
+       (SP_TO_N_PUSHED (address, stack_start (tctx), stack_end (tctx))));
 }
 
 DEFINE_PRIMITIVE ("COMPILED-ENTRY-KIND", Prim_compiled_entry_kind, 1, 1, 0)

@@ -66,17 +66,17 @@ Add_a_Pop_Return_Breakpoint (SCHEME_OBJECT * SP)
    the state of the world. */
 
 void
-Handle_Pop_Return_Break (sstack_t* s)
+Handle_Pop_Return_Break (tctx_t* tctx)
 {
-  SCHEME_OBJECT* sp = stack_pointer (s);
+  SCHEME_OBJECT* sp = stack_pointer (tctx);
   printf ("Pop Return Break: SP = %#lx\n", (unsigned long) sp);
-  set_stack_pointer (sp, s);
+  set_stack_pointer (sp, tctx);
 }
 
 void
-Pop_Return_Break_Point (sstack_t* s)
+Pop_Return_Break_Point (tctx_t* tctx)
 {
-  SCHEME_OBJECT * SP = stack_pointer (s);
+  SCHEME_OBJECT * SP = stack_pointer (tctx);
   sp_record_list previous = &One_Before;
   sp_record_list this = previous->next; /* = SP_List */
 
@@ -86,7 +86,7 @@ Pop_Return_Break_Point (sstack_t* s)
   {
     if (this->sp == SP)
     {
-      Handle_Pop_Return_Break (s);
+      Handle_Pop_Return_Break (tctx);
       previous->next = this->next;
       break;
     }

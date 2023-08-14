@@ -904,10 +904,9 @@ enum trap_state
 
 extern void UX_initialize_trap_recovery (void);
 extern enum trap_state OS_set_trap_state (enum trap_state state);
-extern void hard_reset (SIGCONTEXT_T * scp);
-extern void soft_reset (void);
-extern void trap_handler
-  (const char *, int, SIGINFO_T, SIGCONTEXT_T *);
+extern void hard_reset (SIGCONTEXT_T*, tctx_t*);
+extern void soft_reset (tctx_t*);
+extern void trap_handler (const char*, int, SIGINFO_T, SIGCONTEXT_T*);
 #ifdef CC_SUPPORT_P
    extern SCHEME_OBJECT find_ccblock (unsigned long);
 #endif

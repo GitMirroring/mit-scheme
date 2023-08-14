@@ -172,13 +172,13 @@ struct descriptor dummy_entry =
   {"Dummy_Primitive", "0", "DUMMY-PRIMITIVE", "", "Findprim.c"};
 
 char dummy_error_string [] =
-  "Microcode_Termination (TERM_BAD_PRIMITIVE)";
+  "Microcode_Termination (TERM_BAD_PRIMITIVE, tctx)";
 
 struct descriptor inexistent_entry =
   {"Prim_inexistent", LEXPR_ARITY_STRING, "INEXISTENT-PRIMITIVE", "", "Findprim.c"};
 
 char inexistent_error_string [] =
-  "signal_error_from_primitive (ERR_UNIMPLEMENTED_PRIMITIVE)";
+  "signal_error_from_primitive (ERR_UNIMPLEMENTED_PRIMITIVE, tctx)";
 
 /* forward references */
 
@@ -201,8 +201,8 @@ void initialize_token_buffer (void);
 static void fp_mergesort
   (int, int, struct descriptor **, struct descriptor **);
 void print_procedure (FILE * output,
-			      struct descriptor * primitive_descriptor,
-			      char * error_string);
+		      struct descriptor * primitive_descriptor,
+		      char * error_string);
 void print_primitives (FILE * output, int limit);
 void print_spaces (FILE * output, int how_many);
 void print_entry (FILE * output, int index,
@@ -484,7 +484,7 @@ dump (bool check)
       fprintf (output, "extern SCHEME_OBJECT\n");
       for (count = 0; (count <= max_index); count += 1)
       {
-	fprintf (output, "  %s (void)",
+	fprintf (output, "  %s (tctx_t*)",
 		 (((* data_buffer) [count]) . c_name));
 	if (count == max_index)
 	  fprintf (output, ";\n\n");
@@ -493,19 +493,18 @@ dump (bool check)
       }
     }
 
-  print_procedure
-    (output, (& inexistent_entry), (& (inexistent_error_string [0])));
+  print_procedure (output, &inexistent_entry, &inexistent_error_string[0]);
   print_primitives (output, buffer_index);
   return;
 }
 
 void
-print_procedure (FILE * output,
-		 struct descriptor * primitive_descriptor,
-		 char * error_string)
+print_procedure (FILE* output,
+		 struct descriptor* primitive_descriptor,
+		 char* error_string)
 {
   fprintf (output, "SCHEME_OBJECT\n");
-  fprintf (output, "%s (void)\n",
+  fprintf (output, "%s (tctx_t* tctx)\n",
 	   (primitive_descriptor -> c_name));
   fprintf (output, "{\n");
   fprintf (output, "  PRIMITIVE_HEADER (%s);\n",
@@ -528,7 +527,7 @@ print_primitives (FILE * output, int limit)
   /* Print the procedure table. */
   fprintf
     (output,
-     "\f\nSCHEME_OBJECT (* (%s_Procedure_Table [])) (void) = {\n",
+     "\f\nSCHEME_OBJECT (* (%s_Procedure_Table [])) (tctx_t* tctx) = {\n",
      the_kind);
   for (count = 0; (count < limit); count += 1)
     {

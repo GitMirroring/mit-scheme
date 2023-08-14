@@ -28,8 +28,8 @@ USA.
 #ifndef SCM_CONTEXT_H
 #define SCM_CONTEXT_H 1
 
+#include <setjmp.h>
 #include "object.h"
-#include "stack.h"
 
 typedef struct interpreter_state_s
 {
@@ -45,7 +45,10 @@ typedef struct interpreter_state_s
 // Per-thread context
 typedef struct
 {
-  sstack_t* stack;
+  SCHEME_OBJECT* stack_start;
+  SCHEME_OBJECT* stack_guard;
+  SCHEME_OBJECT* stack_pointer;
+  SCHEME_OBJECT* stack_end;
 
   SCHEME_OBJECT value_store[64];
   SCHEME_OBJECT* value_pointer;
@@ -62,125 +65,243 @@ typedef struct
 
 } tctx_t;
 
-static inline sstack_t*
-tctx_stack (tctx_t* c)
+static inline SCHEME_OBJECT*
+stack_start (tctx_t* tctx)
 {
-  return c->stack;
-}
-
-static inline unsigned int
-n_vals (tctx_t* c)
-{
-  return c->value_pointer - c->value_store;
+  return tctx->stack_start;
 }
 
 static inline void
-add_val (SCHEME_OBJECT val, tctx_t* c)
+set_stack_start (SCHEME_OBJECT* sp, tctx_t* tctx)
 {
-  *c->value_pointer++ = val;
-}
-
-static inline SCHEME_OBJECT
-get_val (unsigned int n, tctx_t* c)
-{
-  return c->value_store[n];
-}
-
-static inline SCHEME_OBJECT
-get_single_val (tctx_t* c)
-{
-  assert (n_vals (c) == 1);
-  return c->value_store[0];
-}
-
-static inline void
-reset_vals (tctx_t* c)
-{
-  c->value_pointer = c->value_store;
-}
-
-static inline SCHEME_OBJECT
-get_history (tctx_t* c)
-{
-  return *c->history;
-}
-
-static inline void
-set_history (SCHEME_OBJECT history, tctx_t* c)
-{
-  c->history = OBJECT_ADDRESS (history);
-}
-
-static inline SCHEME_OBJECT
-get_restore_history_offset (tctx_t* c)
-{
-  return ULONG_TO_FIXNUM (c->restore_history_offset);
-}
-
-static inline void
-set_restore_history_offset (SCHEME_OBJECT offset, tctx_t* c)
-{
-  c->restore_history_offset = OBJECT_DATUM (offset);
+  tctx->stack_start = sp;
 }
 
 static inline SCHEME_OBJECT*
-restore_history_pointer (tctx_t* c)
+stack_end (tctx_t* tctx)
 {
-  return (c->restore_history_offset == 0)
-         ? 0
-         : stack_end (tctx_stack (c)) - c->restore_history_offset;
-}
-
-static inline interpreter_state_t*
-interpreter_state (tctx_t* c)
-{
-  return c->state;
+  return tctx->stack_end;
 }
 
 static inline void
-set_interpreter_state (interpreter_state_t* state, tctx_t* c)
+set_stack_end (SCHEME_OBJECT* sp, tctx_t* tctx)
 {
-  c->state = state;
-}
-
-static inline SCHEME_OBJECT
-get_primitive (tctx_t* c)
-{
-  return c->primitive;
-}
-
-static inline void
-set_primitive (SCHEME_OBJECT primitive, tctx_t* c)
-{
-  c->primitive = primitive;
+  tctx->stack_end = sp;
 }
 
 static inline SCHEME_OBJECT*
-get_primitive_free (tctx_t* c)
+stack_guard (bool stack_overflow_enabled, tctx_t* tctx)
 {
-  return c->primitive_free;
+  return stack_overflow_enabled ? tctx->stack_guard : tctx->stack_start;
+}
+
+static inline SCHEME_OBJECT*
+stack_pointer (tctx_t* tctx)
+{
+  return tctx->stack_pointer;
 }
 
 static inline void
-set_primitive_free (SCHEME_OBJECT* free, tctx_t* c)
+set_stack_pointer (SCHEME_OBJECT* sp, tctx_t* tctx)
 {
-  c->primitive_free = free;
+  tctx->stack_pointer = sp;
+}
+
+static inline bool
+valid_stack_pointer_p (SCHEME_OBJECT* sp, tctx_t* tctx)
+{
+  return sp >= tctx->stack_guard && sp <= stack_end (tctx);
+}
+
+static inline bool
+address_in_stack_p (SCHEME_OBJECT* addr, tctx_t* tctx)
+{
+  return addr >= stack_start (tctx) && addr < stack_end (tctx);
+}
+
+static inline void
+stack_push (SCHEME_OBJECT obj, tctx_t* tctx)
+{
+  *--tctx->stack_pointer = obj;
+}
+
+static inline SCHEME_OBJECT
+stack_pop (tctx_t* tctx)
+{
+  return *tctx->stack_pointer++;
+}
+
+static inline SCHEME_OBJECT
+stack_ref (unsigned int n, tctx_t* tctx)
+{
+  return tctx->stack_pointer[n];
+}
+
+static inline SCHEME_OBJECT*
+stack_loc (unsigned int n, tctx_t* tctx)
+{
+  return tctx->stack_pointer + n;
+}
+
+static inline void
+stack_set (unsigned int n, SCHEME_OBJECT obj, tctx_t* tctx)
+{
+  tctx->stack_pointer[n] = obj;
 }
 
 static inline unsigned long
-primitive_lexpr_actuals (tctx_t* c)
+stack_n_pushed (tctx_t* tctx)
 {
-  return c->primitive_lexpr_actuals;
+  return tctx->stack_end - tctx->stack_pointer;
 }
 
 static inline void
-set_primitive_lexpr_actuals (unsigned long n, tctx_t* c)
+decrement_sp (unsigned long n, tctx_t* tctx)
 {
-  c->primitive_lexpr_actuals = n;
+  tctx->stack_pointer -= n;
+}
+
+static inline void
+increment_sp (unsigned long n, tctx_t* tctx)
+{
+  tctx->stack_pointer += n;
+}
+
+static inline bool
+stack_can_push_p (unsigned long n, tctx_t* tctx)
+{
+  return (tctx->stack_pointer - n) >= tctx->stack_guard;
+}
+
+static inline bool
+stack_can_pop_p (unsigned long n, tctx_t* tctx)
+{
+  return (tctx->stack_pointer + n) <= tctx->stack_end;
+}
+
+static inline bool
+stack_overwritten_p (tctx_t* tctx)
+{
+  return *tctx->stack_start != (MAKE_BROKEN_HEART (tctx->stack_start));
+}
+
+#define SP_TO_N_PUSHED(sp, start, end) ((end) - (sp))
+#define N_PUSHED_TO_SP(np, start, end) ((end) - (np))
+
+static inline unsigned int
+n_vals (tctx_t* tctx)
+{
+  return tctx->value_pointer - tctx->value_store;
+}
+
+static inline void
+add_val (SCHEME_OBJECT val, tctx_t* tctx)
+{
+  *tctx->value_pointer++ = val;
+}
+
+static inline SCHEME_OBJECT
+get_val (unsigned int n, tctx_t* tctx)
+{
+  return tctx->value_store[n];
+}
+
+static inline SCHEME_OBJECT
+get_single_val (tctx_t* tctx)
+{
+  assert (n_vals (tctx) == 1);
+  return tctx->value_store[0];
+}
+
+static inline void
+reset_vals (tctx_t* tctx)
+{
+  tctx->value_pointer = tctx->value_store;
+}
+
+static inline SCHEME_OBJECT
+get_history (tctx_t* tctx)
+{
+  return *tctx->history;
+}
+
+static inline void
+set_history (SCHEME_OBJECT history, tctx_t* tctx)
+{
+  tctx->history = OBJECT_ADDRESS (history);
+}
+
+static inline SCHEME_OBJECT
+get_restore_history_offset (tctx_t* tctx)
+{
+  return ULONG_TO_FIXNUM (tctx->restore_history_offset);
+}
+
+static inline void
+set_restore_history_offset (SCHEME_OBJECT offset, tctx_t* tctx)
+{
+  tctx->restore_history_offset = OBJECT_DATUM (offset);
+}
+
+static inline SCHEME_OBJECT*
+restore_history_pointer (tctx_t* tctx)
+{
+  return (tctx->restore_history_offset == 0)
+         ? 0
+         : stack_end (tctx) - tctx->restore_history_offset;
+}
+
+static inline interpreter_state_t*
+interpreter_state (tctx_t* tctx)
+{
+  return tctx->state;
+}
+
+static inline void
+set_interpreter_state (interpreter_state_t* state, tctx_t* tctx)
+{
+  tctx->state = state;
+}
+
+static inline SCHEME_OBJECT
+get_primitive (tctx_t* tctx)
+{
+  return tctx->primitive;
+}
+
+static inline void
+set_primitive (SCHEME_OBJECT primitive, tctx_t* tctx)
+{
+  tctx->primitive = primitive;
+}
+
+static inline SCHEME_OBJECT*
+get_primitive_free (tctx_t* tctx)
+{
+  return tctx->primitive_free;
+}
+
+static inline void
+set_primitive_free (SCHEME_OBJECT* free, tctx_t* tctx)
+{
+  tctx->primitive_free = free;
+}
+
+static inline unsigned long
+primitive_lexpr_actuals (tctx_t* tctx)
+{
+  return tctx->primitive_lexpr_actuals;
+}
+
+static inline void
+set_primitive_lexpr_actuals (unsigned long n, tctx_t* tctx)
+{
+  tctx->primitive_lexpr_actuals = n;
 }
 
 extern tctx_t* initialize_tctx (unsigned long, SCHEME_OBJECT*);
 extern tctx_t* default_tctx (void);
 extern tctx_t* current_tctx (void);
+extern void stack_reset (tctx_t*);
 
 #endif // SCM_CONTEXT_H
