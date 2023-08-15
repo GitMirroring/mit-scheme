@@ -53,9 +53,6 @@ set_restore_history_offset_and_mark (SCHEME_OBJECT offset, tctx_t* tctx)
     *p = MAKE_RETURN_CODE (RC_RESTORE_HISTORY);
 }
 
-extern void abort_to_interpreter (int, tctx_t*) NORETURN;
-extern int abort_to_interpreter_argument (tctx_t*);
-
 /* Note: push_cont must match the definitions in sdata.h */
 
 static inline void
@@ -133,6 +130,11 @@ apply_frame_n_args (tctx_t* tctx)
   return apply_frame_header_n_args (apply_frame_header (tctx));
 }
 
+extern void start_interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern SCHEME_OBJECT apply_primitive_external (SCHEME_OBJECT, tctx_t*);
+extern void abort_to_interpreter (int, tctx_t*) NORETURN;
+extern int abort_to_interpreter_argument (tctx_t*);
+
 static inline void
 primitive_reduce (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
@@ -150,9 +152,5 @@ primitive_reduce_no_trap (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
   stack_push (exp, tctx);
   abort_to_interpreter (PRIM_NO_TRAP_EVAL, tctx);
 }
-
-extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
-extern SCHEME_OBJECT apply_primitive_external (SCHEME_OBJECT, tctx_t*);
-
 
 #endif /* not SCM_INTERP_H */

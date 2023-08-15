@@ -368,6 +368,7 @@ vector_set_2 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
 #define BYTEVECTOR_SET(s, i, c) ((* (BYTEVECTOR_LOC ((s), (i)))) = (c))
 
 /* Unicode string operations */
+/* These must be kept in sync with "runtime/string.scm". */
 
 #define UNICODE_STRING_CP_LENGTH(u)					\
   (OBJECT_DATUM (MEMORY_REF ((u), UNICODE_STRING_LENGTH_INDEX)))
@@ -375,17 +376,31 @@ vector_set_2 (SCHEME_OBJECT obj, SCHEME_OBJECT val)
 #define UNICODE_STRING_FLAGS(u)						\
   (OBJECT_TYPE (MEMORY_REF ((u), UNICODE_STRING_LENGTH_INDEX)))
 
-/* This must be kept in sync with "runtime/string.scm". */
-#define UNICODE_STRING_BYTES_PER_CP(u)					\
-  ((((UNICODE_STRING_FLAGS (u)) & 0x3) == 0)				\
-   ? 3									\
-   : ((UNICODE_STRING_FLAGS (u)) & 0x3))
+#define UNICODE_STRING_FLAG_NFC (0x1)
+#define UNICODE_STRING_FLAG_NFC_SET (0x2)
+#define UNICODE_STRING_FLAG_NFD (0x4)
+#define UNICODE_STRING_FLAGS_ALL (0x7)
+
+static inline SCHEME_OBJECT
+make_unicode_string_length (uint8_t bytes_per_cp, uint8_t flags,
+                            unsigned long ncps)
+{
+  bytes_per_cp &= 0x3;
+  if (bytes_per_cp == 0x0)
+    bytes_per_cp = 0x3;
+  return MAKE_OBJECT ((flags & 0x7) << 2 | bytes_per_cp, ncps);
+}
+
+#define UNICODE_STRING_BYTES_PER_CP(u)                                  \
+  (((UNICODE_STRING_FLAGS (u) & 0x3) == 0)                              \
+   ? 3                                                                  \
+   : (UNICODE_STRING_FLAGS (u) & 0x3))
 
 #define UNICODE_STRING_BYTE_LENGTH(u)					\
-  ((UNICODE_STRING_CP_LENGTH (u)) * (UNICODE_STRING_BYTES_PER_CP (u)))
+  (UNICODE_STRING_CP_LENGTH (u) * UNICODE_STRING_BYTES_PER_CP (u))
 
 #define UNICODE_STRING_POINTER(u)					\
-  ((uint8_t *) (MEMORY_LOC ((u), UNICODE_STRING_DATA)))
+  ((uint8_t*) MEMORY_LOC ((u), UNICODE_STRING_DATA))
 
 /* Legacy string operations */
 

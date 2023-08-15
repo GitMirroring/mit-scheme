@@ -30,13 +30,15 @@ USA.
 #include "lookup.h"
 #include "history.h"
 
+extern void* obstack_chunk_alloc (size_t);
+#define obstack_chunk_free free
 extern void preserve_signal_mask (void);
 extern void fixup_float_environment (void);
 
 typedef enum
 {
-  INT_ACTION_APPLY_CONT,
-  INT_ACTION_APPLY_CONT_NO_TRAP,
+  INT_ACTION_RETURN,
+  INT_ACTION_RETURN_NO_TRAP,
   INT_ACTION_APPLY_PROC,
   INT_ACTION_APPLY_PROC_NO_TRAP,
   INT_ACTION_EVAL,
@@ -127,7 +129,7 @@ single_val (SCHEME_OBJECT val, tctx_t* tctx)
 {
   reset_vals (tctx);
   add_val (val, tctx);
-  return INT_ACTION_APPLY_CONT;
+  return INT_ACTION_RETURN;
 }
 
 static inline int_action_t
@@ -516,7 +518,7 @@ static inline int_action_t
 cont_join_stacklets (SCHEME_OBJECT exp, tctx_t* tctx)
 {
   unpack_control_point (exp, tctx);
-  return INT_ACTION_APPLY_CONT;
+  return INT_ACTION_RETURN;
 }
 
 static inline int_action_t
@@ -542,7 +544,7 @@ cont_restore_dont_copy_history (SCHEME_OBJECT exp, tctx_t* tctx)
   increment_sp (1, tctx);       // obsolete field
   set_history (exp, tctx);
   set_restore_history_offset (stack_pop (tctx), tctx);
-  return INT_ACTION_APPLY_CONT;
+  return INT_ACTION_RETURN;
 }
 
 static inline int_action_t
@@ -559,7 +561,7 @@ cont_restore_history (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
     }
   increment_sp (1, tctx);       // obsolete field
   set_restore_history_offset_and_mark (stack_pop (tctx), tctx);
-  return INT_ACTION_APPLY_CONT;
+  return INT_ACTION_RETURN;
 }
 
 static inline int_action_t
@@ -570,7 +572,7 @@ cont_restore_int_mask (SCHEME_OBJECT ret, SCHEME_OBJECT exp, tctx_t* tctx)
     REQUEST_GC (0);
 
   if (!PENDING_INTERRUPTS_P)
-    return INT_ACTION_APPLY_CONT;
+    return INT_ACTION_RETURN;
 
   push_cont_rc (RC_RESTORE_VALUE, get_single_val (tctx), tctx);
   setup_interrupt (PENDING_INTERRUPTS (), tctx);
@@ -583,7 +585,7 @@ cont_stack_marker (tctx_t* tctx)
   // Frame consists of the return code followed by two objects.  The first
   // object has already been popped into exp, so just pop the second arg.
   increment_sp (1, tctx);
-  return INT_ACTION_APPLY_CONT;
+  return INT_ACTION_RETURN;
 }
 
 static inline int_action_t
@@ -1068,7 +1070,7 @@ handle_throw (int code, tctx_t* tctx)
 
     case PRIM_POP_RETURN:
       set_primitive (SHARP_F, tctx);
-      return INT_ACTION_APPLY_CONT;
+      return INT_ACTION_RETURN;
 
     case PRIM_RETURN_TO_C:
       set_primitive (SHARP_F, tctx);
@@ -1076,7 +1078,7 @@ handle_throw (int code, tctx_t* tctx)
 
     case PRIM_NO_TRAP_POP_RETURN:
       set_primitive (SHARP_F, tctx);
-      return INT_ACTION_APPLY_CONT_NO_TRAP;
+      return INT_ACTION_RETURN_NO_TRAP;
 
     case PRIM_INTERRUPT:
       back_out_of_primitive (tctx);
@@ -1109,8 +1111,8 @@ handle_throw (int code, tctx_t* tctx)
     }
 }
 
-void
-interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+static void
+run_interpreter (int_action_t action, tctx_t* tctx)
 {
   interpreter_state_t new_state;
   bind_interpreter_state (&new_state, tctx);
@@ -1118,15 +1120,13 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
   preserve_signal_mask ();
   fixup_float_environment ();
 
-  int_action_t action
-    = (code == 0)
-      ? eval (exp, env, tctx)
-      : handle_throw (code, tctx);
+  if (code != 0)
+    action = handle_throw (code, tctx);
   while (true)
     switch (action)
       {
-      case INT_ACTION_APPLY_CONT:
-      case INT_ACTION_APPLY_CONT_NO_TRAP:
+      case INT_ACTION_RETURN:
+      case INT_ACTION_RETURN_NO_TRAP:
         action = apply_cont (tctx);
         break;
 
@@ -1137,13 +1137,55 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 
       case INT_ACTION_EVAL:
       case INT_ACTION_EVAL_NO_TRAP:
-        SCHEME_OBJECT exp2 = stack_pop (tctx);
-        SCHEME_OBJECT env2 = stack_pop (tctx);
-        action = eval (exp2, env2, tctx);
+        SCHEME_OBJECT exp = stack_pop (tctx);
+        SCHEME_OBJECT env = stack_pop (tctx);
+        action = eval (exp, env, tctx);
         break;
 
       case INT_ACTION_DONE:
         unbind_interpreter_state (&new_state, tctx);
         return;
       }
+}
+
+void
+start_interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  stack_push (env, tctx);
+  stack_push (exp, tctx);
+  run_interpreter (INT_ACTION_EVAL, tctx);
+}
+
+// This is solely for the use of the FFI.
+void
+start_recursive_interpreter (tctx_t* tctx)
+{
+  run_interpreter (INT_ACTION_RETURN, tctx);
+}
+
+void
+abort_to_interpreter (int argument, tctx_t* tctx)
+{
+  interpreter_state_t* state = interpreter_state (tctx);
+  if (state == NULL_INTERPRETER_STATE)
+  {
+    outf_fatal ("abort_to_interpreter: Interpreter not set up.\n");
+    termination_init_error ();
+  }
+  state->throw_argument = argument;
+
+  unsigned long old_mask = GET_INT_MASK;
+  SET_INTERRUPT_MASK (0);
+  dstack_set_position (state->dstack_position);
+  SET_INTERRUPT_MASK (old_mask);
+
+  obstack_free (&scratch_obstack, 0);
+  obstack_init (&scratch_obstack);
+  longjmp (state->catch_env, argument);
+}
+
+int
+abort_to_interpreter_argument (tctx_t* tctx)
+{
+  return interpreter_state (tctx)->throw_argument;
 }

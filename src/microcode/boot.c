@@ -35,7 +35,6 @@ USA.
 extern void init_exit_scheme (void);
 extern void OS_announcement (void);
 extern void initialize_fixed_objects_vector (void);
-extern SCHEME_OBJECT Re_Enter_Interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern SCHEME_OBJECT make_microcode_identification_vector (void);
 
 static void start_scheme (tctx_t*);
@@ -183,17 +182,9 @@ start_scheme (tctx_t* tctx)
 static void
 Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  Interpret (exp, env, tctx);
+  start_interpreter (exp, env, tctx);
   outf_fatal ("\nThe interpreter returned to top level!\n");
   Microcode_Termination (TERM_EXIT, tctx);
-}
-
-/* This must be used with care, and only synchronously. */
-SCHEME_OBJECT
-Re_Enter_Interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
-{
-  Interpret (exp, env, tctx);
-  return get_single_val (tctx);
 }
 
 /* Utility primitives. */

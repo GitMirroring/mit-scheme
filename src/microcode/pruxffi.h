@@ -33,53 +33,55 @@ USA.
    and should minimize dependencies on the exact configuration of the
    machine.  Thus it declares teensy functions like empty_list(). */
 
+#include <stddef.h>
+
 /* This is redundant, but avoids the need for object.h, config.h, types.h... */
 typedef unsigned long SCM;
 
 extern char* cstack_top (void);
-extern void cstack_push (void * addr, int bytes);
-extern char* cstack_lpop (char* tos, int bytes);
-extern void cstack_pop (char* tos);
+extern void cstack_push (void*, size_t);
+extern char* cstack_lpop (char*, size_t);
+extern void cstack_pop (char*);
 
-#define CSTACK_PUSH(TYPE,VAR)					\
-  cstack_push (((void *)(&VAR)), sizeof (TYPE));
+#define CSTACK_PUSH(TYPE, VAR)                                          \
+  cstack_push ((void*) &VAR, sizeof (TYPE));
 
 /* "Local" CStack pops keep the top-of-stack in a local variable
    (TOS).  Thus after an abort the trampoline can start again from the
    undisturbed top of the obstack. */
-#define CSTACK_LPOP(TYPE,VAR,TOS)					\
+#define CSTACK_LPOP(TYPE, VAR, TOS)					\
   TOS = cstack_lpop (TOS, sizeof (TYPE));				\
-  VAR = *(TYPE *)TOS;
+  VAR = *((TYPE*) TOS);
 
-typedef SCM (*CalloutTrampOut)(void);
-typedef SCM (*CalloutTrampIn)(void);
-extern void callout_seal (CalloutTrampIn tramp);
-extern void callout_unseal (CalloutTrampIn expected);
-extern SCM callout_continue (CalloutTrampIn tramp);
-extern char* callout_lunseal (CalloutTrampIn expected);
-extern void callout_pop (char* tos);
+typedef SCM (*CalloutTrampOut) (void);
+typedef SCM (*CalloutTrampIn) (void);
+extern void callout_seal (CalloutTrampIn);
+extern void callout_unseal (CalloutTrampIn);
+extern SCM callout_continue (CalloutTrampIn);
+extern char* callout_lunseal (CalloutTrampIn);
+extern void callout_pop (char*);
 
-typedef void (*CallbackKernel)(void);
-extern void callback_run_kernel (long callback_id, CallbackKernel kernel);
-extern char* callback_lunseal (CallbackKernel expected);
-extern void callback_run_handler (long callback_id, SCM arglist);
-extern void callback_return (char* tos);
+typedef void (*CallbackKernel) (void);
+extern void callback_run_kernel (long, CallbackKernel);
+extern char* callback_lunseal (CallbackKernel);
+extern void callback_run_handler (long, SCM);
+extern void callback_return (char*);
 
 /* Converters. */
 
-extern long arg_long (int argn);
-extern unsigned long arg_ulong (int argn);
-extern double arg_double (int argn);
-extern void* arg_alien_entry (int argn);
-extern void* arg_pointer (int argn);
+extern long arg_long (int);
+extern unsigned long arg_ulong (int);
+extern double arg_double (int);
+extern void* arg_alien_entry (int);
+extern void* arg_pointer (int);
 
-extern SCM long_to_scm (const long i);
-extern SCM ulong_to_scm (const unsigned long i);
-extern SCM double_to_scm (const double d);
-extern SCM pointer_to_scm (const void* p);
-extern SCM struct_to_scm (const void* p, int size);
+extern SCM long_to_scm (const long);
+extern SCM ulong_to_scm (const unsigned long);
+extern SCM double_to_scm (const double);
+extern SCM pointer_to_scm (const void*);
+extern SCM struct_to_scm (const void*, int);
 
-extern SCM cons_alien (const void* p);
+extern SCM cons_alien (const void*);
 
 extern long long_value (void);
 extern unsigned long ulong_value (void);
@@ -88,15 +90,15 @@ extern void* pointer_value (void);
 
 /* Utilities: */
 
-extern void check_number_of_args (int num);
+extern void check_number_of_args (unsigned long);
 extern SCM unspecific (void);
 extern SCM empty_list (void);
-extern int flovec_length (double *first);
+extern int flovec_length (double*);
 
 #ifndef MIT_SCHEME /* Do not include in the microcode, just shims. */
 extern SCM cons (SCM car, SCM cdr);
 /* For debugging messages from shim code. */
-extern void outf_error (const char *, ...);
+extern void outf_error (const char*, ...);
 extern void outf_flush_error (void);
 extern void error_external_return (void);
 #endif
