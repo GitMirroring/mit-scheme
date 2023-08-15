@@ -56,14 +56,6 @@ SCHEME_OBJECT fn_name (tctx_t* tctx)
 #define PRIMITIVE_RETURN(value) return (value)
 #define PRIMITIVE_ABORT(code) (abort_to_interpreter ((code), tctx))
 
-static inline void
-primitive_reduce (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
-{
-  add_val (exp, tctx);
-  add_val (env, tctx);
-  abort_to_interpreter (PRIM_DO_EXPRESSION, tctx);
-}
-
 extern void signal_error_from_primitive (long, tctx_t*) NORETURN;
 extern void signal_interrupt_from_primitive (tctx_t*) NORETURN;
 extern void error_wrong_type_arg (unsigned int) NORETURN;

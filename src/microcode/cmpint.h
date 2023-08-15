@@ -444,9 +444,9 @@ extern long C_return_value;
 #endif
 
 typedef void ASM_ENTRY_POINT (utility_proc_t)
-  (utility_result_t *, unsigned long, unsigned long, unsigned long, 
-   unsigned long);
-extern utility_proc_t * utility_table [];
+  (utility_result_t*, unsigned long, unsigned long, unsigned long,
+   unsigned long, tctx_t*);
+extern utility_proc_t* utility_table [];
 
 #ifndef FLUSH_I_CACHE
 #  define FLUSH_I_CACHE() do {} while (false)
@@ -474,42 +474,43 @@ extern void guarantee_interp_return (tctx_t*);
 extern long apply_compiled_procedure (tctx_t*);
 extern long return_to_compiled_code (tctx_t*);
 
-extern void apply_compiled_from_primitive (unsigned long, SCHEME_OBJECT);
+extern void apply_compiled_from_primitive
+  (unsigned long, SCHEME_OBJECT, tctx_t*);
 extern void compiled_with_interrupt_mask
-  (unsigned long, SCHEME_OBJECT, unsigned long);
-extern void compiled_with_stack_marker (SCHEME_OBJECT);
+  (unsigned long, SCHEME_OBJECT, unsigned long, tctx_t*);
+extern void compiled_with_stack_marker (SCHEME_OBJECT, tctx_t*);
 
 extern void compiler_initialize (bool, tctx_t*);
 extern void compiler_reset (SCHEME_OBJECT, tctx_t*);
-extern void compiler_setup_interrupt(tctx_t*);
+extern void compiler_setup_interrupt (tctx_t*);
 
 extern void declare_compiled_code_block (SCHEME_OBJECT);
 
 extern void compiler_interrupt_common
-  (utility_result_t *, insn_t *, SCHEME_OBJECT);
+  (utility_result_t*, insn_t*, SCHEME_OBJECT, tctx_t*);
 
-extern long comp_link_caches_restart (void);
+extern long comp_link_caches_restart (tctx_t*);
 extern long comp_op_lookup_trap_restart (void);
-extern long comp_interrupt_restart (void);
-extern long comp_assignment_trap_restart (void);
-extern long comp_cache_lookup_apply_restart (void);
-extern long comp_lookup_trap_restart (void);
-extern long comp_safe_lookup_trap_restart (void);
-extern long comp_unassigned_p_trap_restart (void);
-extern long comp_error_restart (void);
+extern long comp_interrupt_restart (tctx_t*);
+extern long comp_assignment_trap_restart (tctx_t*);
+extern long comp_cache_lookup_apply_restart (tctx_t*);
+extern long comp_lookup_trap_restart (tctx_t*);
+extern long comp_safe_lookup_trap_restart (tctx_t*);
+extern long comp_unassigned_p_trap_restart (tctx_t*);
+extern long comp_error_restart (tctx_t*);
 
-extern SCHEME_OBJECT bkpt_install (insn_t *);
-extern SCHEME_OBJECT bkpt_closure_install (insn_t *);
-extern bool bkpt_p (insn_t *);
-extern SCHEME_OBJECT bkpt_proceed (insn_t *, SCHEME_OBJECT, SCHEME_OBJECT);
-extern long do_bkpt_proceed (insn_t **);
-extern void bkpt_remove (insn_t *, SCHEME_OBJECT);
+extern SCHEME_OBJECT bkpt_install (insn_t*);
+extern SCHEME_OBJECT bkpt_closure_install (insn_t*);
+extern bool bkpt_p (insn_t*);
+extern SCHEME_OBJECT bkpt_proceed (insn_t*, SCHEME_OBJECT, SCHEME_OBJECT);
+extern long do_bkpt_proceed (insn_t**);
+extern void bkpt_remove (insn_t*, SCHEME_OBJECT);
 
 extern int pc_to_utility_index (unsigned long);
-extern const char * utility_index_to_name (unsigned int);
+extern const char* utility_index_to_name (unsigned int);
 extern int pc_to_builtin_index (unsigned long);
-extern const char * builtin_index_to_name (unsigned int);
-extern void declare_builtin (unsigned long, const char *);
+extern const char* builtin_index_to_name (unsigned int);
+extern void declare_builtin (unsigned long, const char*);
 
 extern utility_proc_t comutil_return_to_interpreter;
 extern utility_proc_t comutil_operator_apply_trap;

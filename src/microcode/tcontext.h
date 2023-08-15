@@ -263,6 +263,30 @@ set_interpreter_state (interpreter_state_t* state, tctx_t* tctx)
   tctx->state = state;
 }
 
+static inline int
+interpreter_catch (tctx_t* tctx)
+{
+  return setjmp (interpreter_state (tctx)->catch_env);
+}
+
+static inline void
+interpreter_throw (int arg, tctx_t* tctx)
+{
+  return longjmp (interpreter_state (tctx)->catch_env, arg);
+}
+
+static inline long
+prim_apply_error_code (tctx_t* tctx)
+{
+  return tctx->prim_apply_error_code;
+}
+
+static inline void
+set_prim_apply_error_code (long code, tctx_t* tctx)
+{
+  tctx->prim_apply_error_code = code;
+}
+
 static inline SCHEME_OBJECT
 get_primitive (tctx_t* tctx)
 {
@@ -303,5 +327,7 @@ extern tctx_t* initialize_tctx (unsigned long, SCHEME_OBJECT*);
 extern tctx_t* default_tctx (void);
 extern tctx_t* current_tctx (void);
 extern void stack_reset (tctx_t*);
+extern void bind_interpreter_state (interpreter_state_t*, tctx_t*);
+extern void unbind_interpreter_state (interpreter_state_t*, tctx_t*);
 
 #endif // SCM_CONTEXT_H

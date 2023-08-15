@@ -27,6 +27,9 @@ USA.
 
 /* Floating Point Environment */
 
+#ifndef SCM_FLOENV_H
+#define SCM_FLOENV_H 1
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
@@ -239,3 +242,5 @@ feupdateenv (const fenv_t *fe)
   return (0);
 }
 #endif
+
+#endif                          // SCM_FLOENV_H

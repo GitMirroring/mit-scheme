@@ -60,9 +60,9 @@ DEFINE_PRIMITIVE ("PRIMITIVE-EVAL-STEP", Prim_eval_step, 3, 3, 0)
   canonicalize_primitive_context (tctx);
   pop_primitive_frame (3, tctx);
   install_traps (hooks);
-  add_val (exp, tctx);
-  add_val (env, tctx);
-  abort_to_interpreter (PRIM_NO_TRAP_EVAL, tctx);
+  primitive_reduce_no_trap (exp, env, tctx);
+  /*NOTREACHED*/
+  PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 /* (PRIMITIVE-APPLY-STEP OPERATOR OPERANDS HUNK3)

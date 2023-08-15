@@ -101,7 +101,7 @@ Invokes PROCEDURE on the arguments in ARG-LIST.")
 #ifdef CC_SUPPORT_P
     if (CC_RETURN_P (stack_ref (n_args, tctx)))
       {
-	apply_compiled_from_primitive (n_args, procedure);
+	apply_compiled_from_primitive (n_args, procedure, tctx);
 	UN_POP_PRIMITIVE_FRAME (2, tctx);
 	PRIMITIVE_RETURN (UNSPECIFIC);
       }

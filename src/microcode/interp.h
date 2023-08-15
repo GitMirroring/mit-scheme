@@ -133,6 +133,26 @@ apply_frame_n_args (tctx_t* tctx)
   return apply_frame_header_n_args (apply_frame_header (tctx));
 }
 
+static inline void
+primitive_reduce (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  stack_check (2, tctx);
+  stack_push (env, tctx);
+  stack_push (exp, tctx);
+  abort_to_interpreter (PRIM_DO_EXPRESSION, tctx);
+}
+
+static inline void
+primitive_reduce_no_trap (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  stack_check (2, tctx);
+  stack_push (env, tctx);
+  stack_push (exp, tctx);
+  abort_to_interpreter (PRIM_NO_TRAP_EVAL, tctx);
+}
+
 extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern void apply_primitive_external (SCHEME_OBJECT, tctx_t*);
+
 
 #endif /* not SCM_INTERP_H */

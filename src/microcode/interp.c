@@ -30,11 +30,17 @@ USA.
 #include "lookup.h"
 #include "history.h"
 
+extern void preserve_signal_mask (void);
+extern void fixup_float_environment (void);
+
 typedef enum
 {
   INT_ACTION_APPLY_CONT,
+  INT_ACTION_APPLY_CONT_NO_TRAP,
   INT_ACTION_APPLY_PROC,
+  INT_ACTION_APPLY_PROC_NO_TRAP,
   INT_ACTION_EVAL,
+  INT_ACTION_EVAL_NO_TRAP,
   INT_ACTION_RETURN_FROM_COMPILED_CODE,
   INT_ACTION_DONE
 } int_action_t;
@@ -724,6 +730,22 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
   if (Primitive_Debug)
     Print_Primitive (proc, tctx);
 #endif
+  apply_primitive_external (proc, tctx);
+#ifdef ENABLE_DEBUGGING_TOOLS
+  if (Primitive_Debug)
+    {
+      Print_Expression (val, "Primitive Result");
+      outf_error("\n");
+      outf_flush_error();
+    }
+#endif
+  increment_sp (n_args, tctx);
+  return single_val (val, tctx);
+}
+
+void
+apply_primitive_external (SCHEME_OBJECT proc, tctx_t* tctx)
+{
   interpreter_state_t* state = interpreter_state (tctx);
   void* position = state->dstack_position;
   set_primitive (proc, tctx);
@@ -740,16 +762,6 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
     }
   set_primitive (SHARP_F, tctx);
   set_primitive_free (0, tctx);
-#ifdef ENABLE_DEBUGGING_TOOLS
-  if (Primitive_Debug)
-    {
-      Print_Expression (val, "Primitive Result");
-      outf_error("\n");
-      outf_flush_error();
-    }
-#endif
-  increment_sp (n_args, tctx);
-  return single_val (val, tctx);
 }
 
 static int_action_t
@@ -1011,24 +1023,112 @@ apply_proc (tctx_t* tctx)
 
 // Top-level entry
 
-// TODO: Add abort support and anything else special from original.
+static int_action_t
+handle_throw (int code, tctx_t* tctx)
+{
+  switch (code)
+    {
+    case PRIM_APPLY:
+      set_primitive (SHARP_F, tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case PRIM_NO_TRAP_APPLY:
+      set_primitive (SHARP_F, tctx);
+      return INT_ACTION_APPLY_PROC_NO_TRAP;
+
+    case PRIM_APPLY_INTERRUPT:
+      set_primitive (SHARP_F, tctx);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, apply_frame_proc (tctx), tctx);
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case PRIM_APPLY_ERROR:
+      set_primitive (SHARP_F, tctx);
+      push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
+      Do_Micro_Error (prim_apply_error_code (tctx), true, tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case PRIM_DO_EXPRESSION:
+      set_primitive (SHARP_F, tctx);
+      new_reduction (stack_ref (0, tctx), stack_ref (1, tctx), tctx);
+      return INT_ACTION_EVAL;
+
+    case PRIM_NO_TRAP_EVAL:
+      set_primitive (SHARP_F, tctx);
+      new_reduction (stack_ref (0, tctx), stack_ref (1, tctx), tctx);
+      return INT_ACTION_EVAL_NO_TRAP;
+
+    case PRIM_POP_RETURN:
+      set_primitive (SHARP_F, tctx);
+      return INT_ACTION_APPLY_CONT;
+
+    case PRIM_RETURN_TO_C:
+      set_primitive (SHARP_F, tctx);
+      return INT_ACTION_DONE;
+
+    case PRIM_NO_TRAP_POP_RETURN:
+      set_primitive (SHARP_F, tctx);
+      return INT_ACTION_APPLY_CONT_NO_TRAP;
+
+    case PRIM_INTERRUPT:
+      back_out_of_primitive (tctx);
+      setup_interrupt (PENDING_INTERRUPTS (), tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case PRIM_ABORT_TO_C:
+      back_out_of_primitive (tctx);
+      return INT_ACTION_DONE;
+
+    case ERR_ARG_1_WRONG_TYPE:
+      back_out_of_primitive (tctx);
+      Do_Micro_Error (ERR_ARG_1_WRONG_TYPE, true, tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case ERR_ARG_2_WRONG_TYPE:
+      back_out_of_primitive (tctx);
+      Do_Micro_Error (ERR_ARG_2_WRONG_TYPE, true, tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    case ERR_ARG_3_WRONG_TYPE:
+      back_out_of_primitive (tctx);
+      Do_Micro_Error (ERR_ARG_3_WRONG_TYPE, true, tctx);
+      return INT_ACTION_APPLY_PROC;
+
+    default:
+      back_out_of_primitive (tctx);
+      Do_Micro_Error (code, true, tctx);
+      return INT_ACTION_APPLY_PROC;
+    }
+}
 
 void
 interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  int_action_t action = eval (exp, env, tctx);
+  interpreter_state_t new_state;
+  bind_interpreter_state (&new_state, tctx);
+  int code = interpreter_catch (tctx);
+  preserve_signal_mask ();
+  fixup_float_environment ();
+
+  int_action_t action
+    = (code == 0)
+      ? eval (exp, env, tctx)
+      : handle_throw (code, tctx);
   while (true)
     switch (action)
       {
       case INT_ACTION_APPLY_CONT:
+      case INT_ACTION_APPLY_CONT_NO_TRAP:
         action = apply_cont (tctx);
         break;
 
       case INT_ACTION_APPLY_PROC:
+      case INT_ACTION_APPLY_PROC_NO_TRAP:
         action = apply_proc (tctx);
         break;
 
       case INT_ACTION_EVAL:
+      case INT_ACTION_EVAL_NO_TRAP:
         SCHEME_OBJECT exp2 = stack_pop (tctx);
         SCHEME_OBJECT env2 = stack_pop (tctx);
         action = eval (exp2, env2, tctx);
@@ -1039,6 +1139,7 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
         break;
 
       case INT_ACTION_DONE:
+        unbind_interpreter_state (&new_state, tctx);
         return;
       }
 }

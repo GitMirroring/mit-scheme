@@ -268,7 +268,7 @@ extern void add_reload_cleanup (void (*) (void));
 extern void execute_reload_cleanups (void);
 extern void clear_bit_string (SCHEME_OBJECT);
 extern void bit_string_set (SCHEME_OBJECT, long, int);
-extern unsigned char * lookup_external_string (SCHEME_OBJECT, unsigned long *);
+extern unsigned char* lookup_external_string (SCHEME_OBJECT, unsigned long *);
 
 /* Memory management utilities */
 extern bool object_in_constant_space_p (SCHEME_OBJECT);

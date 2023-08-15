@@ -92,3 +92,23 @@ stack_reset (tctx_t* tctx)
   tctx->stack_guard = tctx->stack_start + STACK_GUARD_SIZE;
   compiler_setup_interrupt (tctx);
 }
+
+void
+bind_interpreter_state (interpreter_state_t* new_state, tctx_t* tctx)
+{
+  interpreter_state_t* state = interpreter_state (tctx);
+  new_state->previous_state = state;
+  new_state->nesting_level = state->nesting_level;
+  new_state->dstack_position = state->dstack_position;
+  set_interpreter_state (new_state, tctx);
+}
+
+void
+unbind_interpreter_state (interpreter_state_t* new_state, tctx_t* tctx)
+{
+  unsigned long old_mask = GET_INT_MASK;
+  SET_INTERRUPT_MASK (0);
+  dstack_set_position (new_state->dstack_position);
+  SET_INTERRUPT_MASK (old_mask);
+  set_interpreter_state (new_state->previous_state, tctx);
+}
