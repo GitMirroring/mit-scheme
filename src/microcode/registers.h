@@ -43,7 +43,7 @@ USA.
 #define REGBLOCK_MEMTOP			0
 #define REGBLOCK_INT_MASK		1
 #define REGBLOCK_CC_VAL			2
-// #define REGBLOCK_ENV			3
+#define REGBLOCK_CC_ENV			3
 #define REGBLOCK_CC_TEMP		4	/* For use by compiler */
 // #define REGBLOCK_EXPR			5
 // #define REGBLOCK_RETURN			6
@@ -80,6 +80,7 @@ set_ulong_register (unsigned int index, unsigned long value)
 #define GET_MEMTOP		GET_REG_P (MEMTOP)
 #define GET_INT_MASK		GET_REG_N (INT_MASK)
 #define GET_CC_VAL		GET_REG_O (CC_VAL)
+#define GET_CC_ENV		GET_REG_O (CC_ENV)
 #define GET_CC_TEMP		GET_REG_O (CC_TEMP)
 #define GET_CLOSURE_FREE	GET_REG_P (CLOSURE_FREE)
 #define GET_CLOSURE_SPACE	GET_REG_P (CLOSURE_SPACE)
@@ -90,6 +91,7 @@ set_ulong_register (unsigned int index, unsigned long value)
 #define SET_MEMTOP(v)		SET_REG_P (MEMTOP, v)
 #define SET_INT_MASK(v)		SET_REG_N (INT_MASK, v)
 #define SET_CC_VAL(v)		SET_REG_O (CC_VAL, v)
+#define SET_CC_ENV(v)		SET_REG_O (CC_ENV, v)
 #define SET_CC_TEMP(v)		SET_REG_O (CC_TEMP, v)
 #define SET_CLOSURE_FREE(v)	SET_REG_P (CLOSURE_FREE, v)
 #define SET_CLOSURE_SPACE(v)	SET_REG_P (CLOSURE_SPACE, v)

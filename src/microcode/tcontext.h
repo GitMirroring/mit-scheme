@@ -59,6 +59,10 @@ typedef struct
   interpreter_state_t* state;
   long prim_apply_error_code;
 
+  // Address of the most recent return code in the stack.  This is only
+  // meaningful while in compiled code.
+  SCHEME_OBJECT* last_return_code;
+
   SCHEME_OBJECT primitive;
   SCHEME_OBJECT* primitive_free;
   unsigned long primitive_lexpr_actuals;
@@ -285,6 +289,18 @@ static inline void
 set_prim_apply_error_code (long code, tctx_t* tctx)
 {
   tctx->prim_apply_error_code = code;
+}
+
+static inline SCHEME_OBJECT*
+last_return_code (tctx_t* tctx)
+{
+  return tctx->last_return_code;
+}
+
+static inline void
+set_last_return_code (SCHEME_OBJECT* offset, tctx_t* tctx)
+{
+  tctx->last_return_code = offset;
 }
 
 static inline SCHEME_OBJECT

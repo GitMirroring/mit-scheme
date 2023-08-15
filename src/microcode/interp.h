@@ -152,7 +152,7 @@ primitive_reduce_no_trap (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 }
 
 extern void interpreter (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
-extern void apply_primitive_external (SCHEME_OBJECT, tctx_t*);
+extern SCHEME_OBJECT apply_primitive_external (SCHEME_OBJECT, tctx_t*);
 
 
 #endif /* not SCM_INTERP_H */

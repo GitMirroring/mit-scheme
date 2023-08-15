@@ -41,49 +41,12 @@ typedef enum
   INT_ACTION_APPLY_PROC_NO_TRAP,
   INT_ACTION_EVAL,
   INT_ACTION_EVAL_NO_TRAP,
-  INT_ACTION_RETURN_FROM_COMPILED_CODE,
   INT_ACTION_DONE
 } int_action_t;
 
-// Eval
-
-static inline int_action_t
-re_eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
-{
-  stack_check (2, tctx);
-  stack_push (exp, tctx);
-  stack_push (env, tctx);
-  return INT_ACTION_EVAL;
-}
-
-static inline int_action_t
-eval_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
-{
-  new_subproblem (exp, env, tctx);
-  return re_eval (exp, env, tctx);
-}
-
-static inline int_action_t
-eval_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
-{
-  new_reduction (exp, env, tctx);
-  return re_eval (exp, env, tctx);
-}
-
-static inline int_action_t
-eval_error (long code, tctx_t* tctx)
-{
-  Do_Micro_Error (code, false, tctx);
-  return INT_ACTION_APPLY_PROC;
-}
-
-static inline int_action_t
-single_val (SCHEME_OBJECT val, tctx_t* tctx)
-{
-  reset_vals (tctx);
-  add_val (val, tctx);
-  return INT_ACTION_APPLY_CONT;
-}
+#ifdef CC_SUPPORT_P
+static int_action_t return_from_compiled_code (long, tctx_t*);
+#endif
 
 static inline SCHEME_OBJECT
 make_delayed (SCHEME_OBJECT proc, SCHEME_OBJECT env)
@@ -125,6 +88,46 @@ make_extended_procedure (SCHEME_OBJECT lambda, SCHEME_OBJECT env)
   *Free++ = lambda;
   *Free++ = env;
   return proc;
+}
+
+// Eval
+
+static inline int_action_t
+re_eval (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  stack_check (2, tctx);
+  stack_push (exp, tctx);
+  stack_push (env, tctx);
+  return INT_ACTION_EVAL;
+}
+
+static inline int_action_t
+eval_subproblem (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  new_subproblem (exp, env, tctx);
+  return re_eval (exp, env, tctx);
+}
+
+static inline int_action_t
+eval_reduction (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
+{
+  new_reduction (exp, env, tctx);
+  return re_eval (exp, env, tctx);
+}
+
+static inline int_action_t
+eval_error (long code, tctx_t* tctx)
+{
+  Do_Micro_Error (code, false, tctx);
+  return INT_ACTION_APPLY_PROC;
+}
+
+static inline int_action_t
+single_val (SCHEME_OBJECT val, tctx_t* tctx)
+{
+  reset_vals (tctx);
+  add_val (val, tctx);
+  return INT_ACTION_APPLY_CONT;
 }
 
 static inline int_action_t
@@ -171,14 +174,12 @@ eval_comment (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 }
 
 #ifdef CC_SUPPORT_P
-#if 0
 static inline int_action_t
 eval_compiled_entry (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
 {
-  long code = enter_compiled_expression (exp, env, tctx);
-  return INT_ACTION_RETURN_FROM_COMPILED_CODE;
+  return return_from_compiled_code
+           (enter_compiled_expression (exp, env, tctx), tctx);
 }
-#endif
 #endif
 
 static inline int_action_t
@@ -600,28 +601,31 @@ cont_snap_need_thunk (SCHEME_OBJECT exp, tctx_t* tctx)
 }
 
 #ifdef CC_SUPPORT_P
-#if 0
 
-#define DEF_CC_RETURN (name)                                            \
+#define DEF_CC_RESTART(name)                                            \
 static inline int_action_t                                              \
-cont_##name (SCHEME_OBJECT exp, tctx_t* tctx)                           \
+cont_##name (SCHEME_OBJECT offset, tctx_t* tctx)                        \
 {                                                                       \
-  long code = name (exp, tctx);                                         \
-  return INT_ACTION_RETURN_FROM_COMPILED_CODE;                          \
+  return return_from_compiled_code (name (offset, tctx), tctx);         \
 }
 
-DEF_CC_RETURN (comp_interrupt_restart)
-DEF_CC_RETURN (comp_lookup_trap_restart)
-DEF_CC_RETURN (comp_assignment_trap_restart)
-DEF_CC_RETURN (comp_op_lookup_trap_restart)
-DEF_CC_RETURN (comp_cache_lookup_apply_restart)
-DEF_CC_RETURN (comp_safe_lookup_trap_restart)
-DEF_CC_RETURN (comp_unassigned_p_trap_restart)
-DEF_CC_RETURN (comp_link_caches_restart)
-DEF_CC_RETURN (comp_error_restart)
-DEF_CC_RETURN (reenter_compiled_code)
+DEF_CC_RESTART (comp_interrupt_restart)
+DEF_CC_RESTART (comp_lookup_trap_restart)
+DEF_CC_RESTART (comp_assignment_trap_restart)
+DEF_CC_RESTART (comp_op_lookup_trap_restart)
+DEF_CC_RESTART (comp_cache_lookup_apply_restart)
+DEF_CC_RESTART (comp_safe_lookup_trap_restart)
+DEF_CC_RESTART (comp_unassigned_p_trap_restart)
+DEF_CC_RESTART (comp_link_caches_restart)
+DEF_CC_RESTART (comp_error_restart)
 
-#endif
+static inline int_action_t
+cont_reenter_compiled_code (SCHEME_OBJECT offset, tctx_t* tctx)
+{
+  return return_from_compiled_code
+           (return_to_compiled_code (offset, tctx), tctx);
+}
+
 #endif
 
 static int_action_t
@@ -680,8 +684,7 @@ apply_cont (tctx_t* tctx)
     case RC_SNAP_NEED_THUNK:
       return cont_snap_need_thunk (exp, tctx);
 #ifdef CC_SUPPORT_P
-#if 0
-#define CC_RET (rc, name)                                               \
+#define CC_RET(rc, name)                                                \
     case rc:                                                            \
       return cont_##name (exp, tctx);
     CC_RET (RC_COMP_INTERRUPT_RESTART, comp_interrupt_restart)
@@ -694,7 +697,6 @@ apply_cont (tctx_t* tctx)
     CC_RET (RC_COMP_LINK_CACHES_RESTART, comp_link_caches_restart)
     CC_RET (RC_COMP_ERROR_RESTART, comp_error_restart)
     CC_RET (RC_REENTER_COMPILED_CODE, reenter_compiled_code)
-#endif
 #endif
     default:
       push_cont (ret, exp, tctx);
@@ -730,7 +732,7 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
   if (Primitive_Debug)
     Print_Primitive (proc, tctx);
 #endif
-  apply_primitive_external (proc, tctx);
+  SCHEME_OBJECT val = apply_primitive_external (proc, tctx);
 #ifdef ENABLE_DEBUGGING_TOOLS
   if (Primitive_Debug)
     {
@@ -743,7 +745,7 @@ apply_primitive (SCHEME_OBJECT proc, tctx_t* tctx)
   return single_val (val, tctx);
 }
 
-void
+SCHEME_OBJECT
 apply_primitive_external (SCHEME_OBJECT proc, tctx_t* tctx)
 {
   interpreter_state_t* state = interpreter_state (tctx);
@@ -762,6 +764,7 @@ apply_primitive_external (SCHEME_OBJECT proc, tctx_t* tctx)
     }
   set_primitive (SHARP_F, tctx);
   set_primitive_free (0, tctx);
+  return val;
 }
 
 static int_action_t
@@ -930,8 +933,13 @@ static int_action_t
 apply_compiled_entry (SCHEME_OBJECT proc, tctx_t* tctx)
 {
   guarantee_cc_return (1 + apply_frame_size (tctx), tctx);
-  long dispatch_code = apply_compiled_procedure (tctx);
-  switch (dispatch_code)
+  return return_from_compiled_code (apply_compiled_procedure (tctx), tctx);
+}
+
+static int_action_t
+return_from_compiled_code (long code, tctx_t* tctx)
+{
+  switch (code)
     {
     case PRIM_DONE:
       return single_val (GET_CC_VAL, tctx);
@@ -951,11 +959,11 @@ apply_compiled_entry (SCHEME_OBJECT proc, tctx_t* tctx)
     case ERR_INAPPLICABLE_OBJECT:
     case ERR_WRONG_NUMBER_OF_ARGUMENTS:
       push_cont_rc (RC_INTERNAL_APPLY_VAL, SHARP_F, tctx);
-      Do_Micro_Error (dispatch_code, true, tctx);
+      Do_Micro_Error (code, true, tctx);
       return INT_ACTION_APPLY_PROC;
 
     default:
-      Do_Micro_Error (dispatch_code, true, tctx);
+      Do_Micro_Error (code, true, tctx);
       return INT_ACTION_APPLY_PROC;
     }
 }
@@ -1132,10 +1140,6 @@ interpreter (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
         SCHEME_OBJECT exp2 = stack_pop (tctx);
         SCHEME_OBJECT env2 = stack_pop (tctx);
         action = eval (exp2, env2, tctx);
-        break;
-
-      case INT_ACTION_RETURN_FROM_COMPILED_CODE:
-        // ??????
         break;
 
       case INT_ACTION_DONE:

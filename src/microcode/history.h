@@ -151,3 +151,4 @@ extern void new_reduction (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern void end_subproblem (tctx_t*);
 extern void compiler_new_subproblem (tctx_t*);
 extern void compiler_new_reduction (tctx_t*);
+#define compiler_end_subproblem end_subproblem

@@ -460,7 +460,7 @@ and MARKER2 is data identifying the marker instance.")
     if ((CC_RETURN_P (stack_ref (3, tctx))) && (CC_ENTRY_P (thunk)))
       {
 	(void) stack_pop (tctx);
-	compiled_with_stack_marker (thunk);
+	compiled_with_stack_marker (thunk, tctx);
 	UN_POP_PRIMITIVE_FRAME (3, tctx);
       }
     else
@@ -514,7 +514,7 @@ with_new_interrupt_mask (unsigned long new_mask, tctx_t* tctx)
     {
       unsigned long current_mask = GET_INT_MASK;
       increment_sp (2, tctx);
-      compiled_with_interrupt_mask (current_mask, receiver, new_mask);
+      compiled_with_interrupt_mask (current_mask, receiver, new_mask, tctx);
       UN_POP_PRIMITIVE_FRAME (2, tctx);
       SET_INT_MASK (new_mask);
       compiler_setup_interrupt (tctx);

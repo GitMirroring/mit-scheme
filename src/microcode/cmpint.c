@@ -138,7 +138,7 @@ static long link_section (link_cc_state_t*, tctx_t*);
 static bool link_section_handler
   (linkage_section_type_t, cache_handler_t**, bool*);
 static void back_out_of_link_section (link_cc_state_t*, tctx_t*);
-static void restore_link_cc_state (link_cc_state_t*, tctx_t*);
+static void restore_link_cc_state (link_cc_state_t*, SCHEME_OBJECT, tctx_t*);
 static void count_linkage_sections
   (SCHEME_OBJECT*, SCHEME_OBJECT*, unsigned long*, unsigned long*);
 static SCHEME_OBJECT read_linkage_sections
@@ -305,24 +305,24 @@ long C_return_value;
 static inline void
 save_last_return_code (unsigned long rc, tctx_t* tctx)
 {
-  unsigned long offset = stack_pointer (tctx) - last_return_code;
+  unsigned long offset = stack_pointer (tctx) - last_return_code (tctx);
   stack_push (ULONG_TO_FIXNUM (offset), tctx);
   stack_push (MAKE_RETURN_CODE (rc), tctx);
-  COMPILER_NEW_SUBPROBLEM (tctx);
+  compiler_new_subproblem (tctx);
 }
 
 static inline void
 check_last_return_code (tctx_t* tctx)
 {
-  assert (RETURN_CODE_P (*last_return_code));
+  assert (RETURN_CODE_P (*last_return_code (tctx)));
 }
 
 static inline void
-restore_last_return_code (tctx_t* tctx)
+restore_last_return_code (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  last_return_code = stack_loc (FIXNUM_TO_ULONG (GET_EXP), tctx);
+  set_last_return_code (stack_loc (FIXNUM_TO_ULONG (offset), tctx), tctx);
   check_last_return_code (tctx);
-  COMPILER_END_SUBPROBLEM (tctx);
+  compiler_end_subproblem (tctx);
 }
 
 /* Initialization */
@@ -482,9 +482,9 @@ compiled_continuation_p (insn_t* entry_addr)
 }
 
 long
-return_to_compiled_code (tctx_t* tctx)
+return_to_compiled_code (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT cont = stack_pop (tctx);
   /* Due to a mistake, continuations for microcode utilities are
      represented as compiled entries.  Should fix eventually.  */
@@ -507,7 +507,7 @@ return_to_compiled_code (tctx_t* tctx)
     {
     bad:
       stack_push (cont, tctx);
-      SAVE_CONT ();
+      push_cont_rc (RC_REENTER_COMPILED_CODE, offset, tctx);
       return ERR_INAPPLICABLE_OBJECT;
     }
 }
@@ -522,13 +522,13 @@ guarantee_cc_return (unsigned long offset, tctx_t* tctx)
     {
       unsigned long lrc = FIXNUM_TO_ULONG (stack_ref (offset + 1, tctx));
       close_stack_gap (offset, CONTINUATION_SIZE, tctx);
-      last_return_code = stack_loc (offset + lrc, tctx);
+      set_last_return_code (stack_loc (offset + lrc, tctx), tctx);
       check_last_return_code (tctx);
-      COMPILER_END_SUBPROBLEM (tctx);
+      compiler_end_subproblem (tctx);
     }
   else
     {
-      last_return_code = stack_loc (offset, tctx);
+      set_last_return_code (stack_loc (offset, tctx), tctx);
       check_last_return_code (tctx);
       open_stack_gap (offset, 1, tctx);
       stack_set (offset, return_to_interpreter, tctx);
@@ -546,7 +546,7 @@ guarantee_interp_return (tctx_t* tctx)
     {
       assert (RETURN_CODE_P (stack_ref (offset + 1, tctx)));
       close_stack_gap (offset, 1, tctx);
-      COMPILER_NEW_REDUCTION (tctx);
+      compiler_new_reduction (tctx);
     }
   else
     {
@@ -654,7 +654,7 @@ invoke_return_address (utility_result_t* DSU_result, tctx_t* tctx)
   if (Free >= GET_MEMTOP)
     {
       compiler_interrupt_return_to_entry (tctx);
-      compiler_interrupt_common (DSU_result, 0, GET_VAL, tctx);
+      compiler_interrupt_common (DSU_result, 0, GET_CC_VAL, tctx);
       return;
     }
   assert (CC_RETURN_P (stack_ref (0, tctx)));
@@ -849,19 +849,17 @@ DEFINE_SCHEME_UTILITY_4 (comutil_link,
   DECLARE_UTILITY_ARG (unsigned long, n_sections);
   link_cc_state_t s;
 
-  (s.return_address) = return_addr;
-  (s.block_address) = block_addr;
-  (s.scan) = constant_addr;
-  (s.n_sections) = n_sections;
-  (s.n_linked_sections) = 0;
+  s.return_address = return_addr;
+  s.block_address = block_addr;
+  s.scan = constant_addr;
+  s.n_sections = n_sections;
+  s.n_linked_sections = 0;
 
   start_linking_cc_block ();
-  {
-    long result = link_remaining_sections (&s, tctx);
-    end_linking_cc_block (&s);
-    if (result != PRIM_DONE)
-      RETURN_TO_C (result);
-  }
+  long result = link_remaining_sections (&s, tctx);
+  end_linking_cc_block (&s);
+  if (result != PRIM_DONE)
+    RETURN_TO_C (result);
   RETURN_TO_SCHEME_CONTINUATION (s.return_address);
 }
 
@@ -869,11 +867,11 @@ DEFINE_SCHEME_UTILITY_4 (comutil_link,
    started by comutil_link after the garbage collector has run.  */
 
 long
-comp_link_caches_restart (tctx_t* tctx)
+comp_link_caches_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
   link_cc_state_t s;
-  restore_link_cc_state (&s, tctx);
-  SET_ENV (cc_block_environment (MAKE_CC_BLOCK (s.block_address)));
+  restore_link_cc_state (&s, offset, tctx);
+  SET_CC_ENV (cc_block_environment (MAKE_CC_BLOCK (s.block_address)));
 
   start_linking_cc_block ();
 
@@ -905,7 +903,7 @@ static void
 start_linking_cc_block (void)
 {
   bool* ap = dstack_alloc (sizeof (bool));
-  (*ap) = linking_cc_block_p;
+  *ap = linking_cc_block_p;
   transaction_begin ();
   transaction_record_action (tat_always, abort_linking_cc_block, ap);
   linking_cc_block_p = 1;
@@ -1062,9 +1060,9 @@ back_out_of_link_section (link_cc_state_t* s, tctx_t* tctx)
 }
 
 static void
-restore_link_cc_state (link_cc_state_t* s, tctx_t* tctx)
+restore_link_cc_state (link_cc_state_t* s, SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   s->n_entries = OBJECT_DATUM (stack_pop (tctx));
   s->n_linked_entries = s->n_entries - OBJECT_DATUM (stack_pop (tctx));
   s->block_address = OBJECT_ADDRESS (stack_pop (tctx));
@@ -1178,7 +1176,7 @@ section_execute_p (SCHEME_OBJECT h)
    that the Scheme stack contains a compiled code entry address (start
    of continuation, procedure, etc.).  The GET_EXP saved with the
    continuation is a piece of state that will be returned to
-   GET_VAL and GET_ENV (both) upon return.  */
+   GET_CC_VAL and GET_CC_ENV (both) upon return.  */
 
 /* Stack has invocation frame with tagged closure on top.  */
 
@@ -1203,28 +1201,28 @@ DEFINE_SCHEME_UTILITY_1 (comutil_interrupt_procedure, entry_point)
   compiler_interrupt_common (DSU_result, entry_point, SHARP_F, tctx);
 }
 
-/* GET_VAL has live data, and there is no entry address on the stack */
+/* GET_CC_VAL has live data, and there is no entry address on the stack */
 
 DEFINE_SCHEME_UTILITY_1 (comutil_interrupt_continuation, entry_point)
 {
   DECLARE_UTILITY_ARG (insn_t*, entry_point);
-  compiler_interrupt_common (DSU_result, entry_point, GET_VAL, tctx);
+  compiler_interrupt_common (DSU_result, entry_point, GET_CC_VAL, tctx);
 }
 
-/* GET_ENV has live data; no entry point on the stack */
+/* GET_CC_ENV has live data; no entry point on the stack */
 
 DEFINE_SCHEME_UTILITY_1 (comutil_interrupt_ic_procedure, entry_point)
 {
   DECLARE_UTILITY_ARG (insn_t*, entry_point);
-  compiler_interrupt_common (DSU_result, entry_point, GET_ENV, tctx);
+  compiler_interrupt_common (DSU_result, entry_point, GET_CC_ENV, tctx);
 }
 
-/* GET_VAL has live data, and the tagged continuation is on top of stack.  */
+/* GET_CC_VAL has live data, and the tagged continuation is on top of stack.  */
 
 DEFINE_SCHEME_UTILITY_0 (comutil_interrupt_continuation_2)
 {
   compiler_interrupt_return_to_entry (tctx);
-  compiler_interrupt_common (DSU_result, 0, GET_VAL, tctx);
+  compiler_interrupt_common (DSU_result, 0, GET_CC_VAL, tctx);
 }
 
 /* Convert the compiled return address on the stack to a compiled
@@ -1261,14 +1259,12 @@ compiler_interrupt_common (utility_result_t * DSU_result,
 }
 
 long
-comp_interrupt_restart (tctx_t* tctx)
+comp_interrupt_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
-  {
-    SCHEME_OBJECT state = stack_pop (tctx);
-    SET_ENV (state);
-    SET_VAL (state);
-  }
+  restore_last_return_code (offset, tctx);
+  SCHEME_OBJECT state = stack_pop (tctx);
+  SET_CC_ENV (state);
+  SET_CC_VAL (state);
   JUMP_TO_CC_ENTRY (stack_pop (tctx));
 }
 
@@ -1310,14 +1306,14 @@ DEFINE_SCHEME_UTILITY_3 (comutil_assignment_trap,
       save_last_return_code (RC_COMP_ASSIGNMENT_TRAP_RESTART, tctx);
       RETURN_TO_C (code);
     }
-  SET_VAL (old_val);
+  SET_CC_VAL (old_val);
   RETURN_TO_SCHEME_CONTINUATION (ret_addr);
 }
 
 long
-comp_assignment_trap_restart (tctx_t* tctx)
+comp_assignment_trap_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT name = stack_ref (0, tctx);
   SCHEME_OBJECT environment = stack_ref (1, tctx);
   SCHEME_OBJECT new_val = stack_ref (2, tctx);
@@ -1329,7 +1325,7 @@ comp_assignment_trap_restart (tctx_t* tctx)
       return (code);
     }
   increment_sp (3, tctx);
-  SET_VAL (old_val);
+  SET_CC_VAL (old_val);
   JUMP_TO_CC_RETURN (stack_pop (tctx));
 }
 
@@ -1357,9 +1353,9 @@ DEFINE_SCHEME_UTILITY_3 (comutil_cache_lookup_apply,
 }
 
 long
-comp_cache_lookup_apply_restart (tctx_t* tctx)
+comp_cache_lookup_apply_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT name = stack_ref (0, tctx);
   SCHEME_OBJECT environment = stack_ref (1, tctx);
   SCHEME_OBJECT frame_size = stack_ref (2, tctx);
@@ -1395,14 +1391,14 @@ DEFINE_SCHEME_UTILITY_2 (comutil_lookup_trap, ret_addr, cache_addr)
         (code, ret_addr, cache, RC_COMP_LOOKUP_TRAP_RESTART, tctx);
       RETURN_TO_C (code);
     }
-  SET_VAL (val);
+  SET_CC_VAL (val);
   RETURN_TO_SCHEME_CONTINUATION (ret_addr);
 }
 
 long
-comp_lookup_trap_restart (tctx_t* tctx)
+comp_lookup_trap_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT name = stack_ref (0, tctx);
   SCHEME_OBJECT environment = stack_ref (1, tctx);
   SCHEME_OBJECT val;
@@ -1413,7 +1409,7 @@ comp_lookup_trap_restart (tctx_t* tctx)
       return (code);
     }
   increment_sp (2, tctx);
-  SET_VAL (val);
+  SET_CC_VAL (val);
   JUMP_TO_CC_RETURN (stack_pop (tctx));
 }
 
@@ -1430,14 +1426,14 @@ DEFINE_SCHEME_UTILITY_2 (comutil_safe_lookup_trap, ret_addr, cache_addr)
         (code, ret_addr, cache, RC_COMP_SAFE_REF_TRAP_RESTART, tctx);
       RETURN_TO_C (code);
     }
-  SET_VAL (val);
+  SET_CC_VAL (val);
   RETURN_TO_SCHEME_CONTINUATION (ret_addr);
 }
 
 long
-comp_safe_lookup_trap_restart (tctx_t* tctx)
+comp_safe_lookup_trap_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT name = stack_ref (0, tctx);
   SCHEME_OBJECT environment = stack_ref (1, tctx);
   SCHEME_OBJECT val;
@@ -1448,7 +1444,7 @@ comp_safe_lookup_trap_restart (tctx_t* tctx)
       return (code);
     }
   increment_sp (2, tctx);
-  SET_VAL (val);
+  SET_CC_VAL (val);
   JUMP_TO_CC_RETURN (stack_pop (tctx));
 }
 
@@ -1465,14 +1461,14 @@ DEFINE_SCHEME_UTILITY_2 (comutil_unassigned_p_trap, ret_addr, cache_addr)
         (code, ret_addr, cache, RC_COMP_UNASSIGNED_TRAP_RESTART, tctx);
       RETURN_TO_C (code);
     }
-  SET_VAL (val);
+  SET_CC_VAL (val);
   RETURN_TO_SCHEME_CONTINUATION (ret_addr);
 }
 
 long
-comp_unassigned_p_trap_restart (tctx_t* tctx)
+comp_unassigned_p_trap_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   SCHEME_OBJECT name = stack_ref (0, tctx);
   SCHEME_OBJECT environment = stack_ref (1, tctx);
   SCHEME_OBJECT val;
@@ -1482,7 +1478,7 @@ comp_unassigned_p_trap_restart (tctx_t* tctx)
       save_last_return_code (RC_COMP_UNASSIGNED_TRAP_RESTART, tctx);
       return code;
     }
-  SET_VAL (val);
+  SET_CC_VAL (val);
   JUMP_TO_CC_RETURN (stack_pop (tctx));
 }
 
@@ -1495,7 +1491,10 @@ comp_unassigned_p_trap_restart (tctx_t* tctx)
 DEFINE_SCHEME_UTILITY_0 (name)                                          \
 {                                                                       \
   TAIL_CALL_2                                                           \
-    (comutil_apply, VECTOR_REF (fixed_objects, (fobj_index)), (arity), tctx); \
+    (comutil_apply,                                                     \
+     VECTOR_REF (fixed_objects, (fobj_index)),                          \
+     (arity),                                                           \
+     tctx);                                                             \
 }
 
 COMPILER_ARITH_PRIM (comutil_decrement, GENERIC_TRAMPOLINE_PREDECESSOR, 2)
@@ -1525,9 +1524,9 @@ DEFINE_SCHEME_UTILITY_2 (comutil_primitive_error, ret_addr, primitive)
 }
 
 long
-comp_error_restart (tctx_t* tctx)
+comp_error_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
+  restore_last_return_code (offset, tctx);
   increment_sp (1, tctx);       /* primitive */
   JUMP_TO_CC_ENTRY (stack_pop (tctx));
 }
@@ -1675,65 +1674,60 @@ setup_lexpr_invocation (SCHEME_OBJECT procedure,
 {
   if (n_args <= n_max)
     {
-      if (open_gap (n_args, (n_max + 1), tctx))
+      if (open_gap (n_args, n_max + 1, tctx))
 	{
 	  recover_from_apply_error (procedure, n_args, tctx);
 	  return (PRIM_APPLY_INTERRUPT);
 	}
-      (STACK_REF (n_max)) = EMPTY_LIST;
-      return (PRIM_DONE);
+      stack_set (n_max, EMPTY_LIST, tctx);
+      return PRIM_DONE;
     }
   {
-    unsigned long n_words = ((n_args - n_max) * 2);
+    unsigned long n_words = (n_args - n_max) * 2;
     if (GC_NEEDED_P (n_words))
       {
 	REQUEST_GC (n_words);
 	recover_from_apply_error (procedure, n_args, tctx);
-	return (PRIM_APPLY_INTERRUPT);
+	return PRIM_APPLY_INTERRUPT;
       }
   }
   {
-    SCHEME_OBJECT rest_arg = (MAKE_POINTER_OBJECT (TC_LIST, Free));
-    SCHEME_OBJECT * p1 = (STACK_LOC (n_max));
+    SCHEME_OBJECT rest_arg = MAKE_POINTER_OBJECT (TC_LIST, Free);
+    SCHEME_OBJECT* p1 = stack_loc (n_max, tctx);
+    for (unsigned long i = n_max; (i < n_args); i += 1)
+      {
+        *Free++ = *p1++;
+        *Free = MAKE_POINTER_OBJECT (TC_LIST, Free + 1);
+        Free += 1;
+      }
+    Free[-1] = EMPTY_LIST;
+    *--p1 = rest_arg;
     {
-      unsigned long i;
-      for (i = n_max; (i < n_args); i += 1)
-	{
-	  (Free[0]) = (STACK_LOCATIVE_POP (p1));
-	  (Free[1]) = (MAKE_POINTER_OBJECT (TC_LIST, (Free + 2)));
-	  Free += 2;
-	}
+      SCHEME_OBJECT* p2 = stack_loc (n_max, tctx);
+      for (unsigned long i = 0; (i < n_max); i += 1)
+        *--p1 = *--p2;
     }
-    (Free[-1]) = EMPTY_LIST;
-    (STACK_LOCATIVE_PUSH (p1)) = rest_arg;
-    {
-      SCHEME_OBJECT * p2 = (STACK_LOC (n_max));
-      unsigned long i;
-      for (i = 0; (i < n_max); i += 1)
-	(STACK_LOCATIVE_PUSH (p1)) = (STACK_LOCATIVE_PUSH (p2));
-    }
-    stack_pointer = p1;
+    set_stack_pointer (p1, tctx);
   }
-  return (PRIM_DONE);
+  return PRIM_DONE;
 }
 
 static bool
 open_gap (unsigned long n_args, unsigned long n_needed, tctx_t* tctx)
 {
-  unsigned long n_defaults = (n_needed - n_args);
-
-  STACK_CHECK (n_defaults);
   if (PENDING_INTERRUPTS_P)
-    return (true);
+    return true;
+
+  unsigned long n_defaults = n_needed - n_args;
+  stack_check (n_defaults, tctx);
 
   open_stack_gap (n_args, n_defaults, tctx);
-  {
-    SCHEME_OBJECT * scan = (STACK_LOC (n_args));
-    SCHEME_OBJECT * end = (STACK_LOC (n_needed));
-    while (scan != end)
-      (STACK_LOCATIVE_POP (scan)) = DEFAULT_OBJECT;
-  }
-  return (false);
+
+  SCHEME_OBJECT* scan = stack_loc (n_args, tctx);
+  SCHEME_OBJECT* end = scan + n_defaults;
+  while (scan < end)
+    *scan++ = DEFAULT_OBJECT;
+  return false;
 }
 
 void
@@ -2213,17 +2207,20 @@ DEFINE_TRAMPOLINE (comutil_reflect_to_interface)
       {
 	unsigned long frame_size = (OBJECT_DATUM (stack_pop (tctx)));
 	SCHEME_OBJECT procedure = stack_pop (tctx);
-	TAIL_CALL_2 (comutil_apply, procedure, frame_size);
+	TAIL_CALL_2 (comutil_apply, procedure, frame_size, tctx);
       }
 
     case REFLECT_CODE_RESTORE_INTERRUPT_MASK:
       SET_INTERRUPT_MASK (OBJECT_DATUM (stack_pop (tctx)));
       invoke_return_address (DSU_result, tctx);
+      /*NOTREACHED*/
+      break;
 
     case REFLECT_CODE_STACK_MARKER:
-      (void) STACK_POP ();	/* marker1 */
-      (void) STACK_POP ();	/* marker2 */
+      increment_sp (2, tctx);   // two markers
       invoke_return_address (DSU_result, tctx);
+      /*NOTREACHED*/
+      break;
 
     case REFLECT_CODE_CC_BKPT:
       /* Attempt to process interrupts before really proceeding. */
@@ -2234,18 +2231,18 @@ DEFINE_TRAMPOLINE (comutil_reflect_to_interface)
 	  return;
 	}
       {
-	insn_t * addr;
-	long code = (do_bkpt_proceed (&addr));
+	insn_t* addr;
+	long code = do_bkpt_proceed (&addr);
 	if (code != PRIM_DONE)
 	  {
-	    STACK_PUSH (code);
+	    stack_push (code, tctx);
 	    RETURN_TO_C (code);
 	  }
 	RETURN_TO_SCHEME_ENTRY (addr);
       }
 
     default:
-      STACK_PUSH (code);
+      stack_push (code, tctx);
       RETURN_TO_C (ERR_EXTERNAL_RETURN);
     }
 }
@@ -2253,20 +2250,20 @@ DEFINE_TRAMPOLINE (comutil_reflect_to_interface)
 DEFINE_TRAMPOLINE (comutil_operator_apply_trap)
 {
   INIT_TRAMPOLINE_2 (procedure, frame_header);
-  TAIL_CALL_2 (comutil_apply, procedure, (OBJECT_DATUM (frame_header)));
+  TAIL_CALL_2 (comutil_apply, procedure, OBJECT_DATUM (frame_header), tctx);
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_primitive_trap)
 {
   INIT_TRAMPOLINE_1 (primitive);
-  TAIL_CALL_1 (comutil_primitive_apply, primitive);
+  TAIL_CALL_1 (comutil_primitive_apply, primitive, tctx);
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_lexpr_trap)
 {
   INIT_TRAMPOLINE_2 (procedure, frame_header);
-  SET_LEXPR_ACTUALS (APPLY_FRAME_HEADER_N_ARGS (frame_header));
-  TAIL_CALL_1 (comutil_primitive_lexpr_apply, procedure);
+  set_primitive_lexpr_actuals (apply_frame_header_n_args (frame_header), tctx);
+  TAIL_CALL_1 (comutil_primitive_lexpr_apply, procedure, tctx);
 }
 
 /* ARITY mismatch handling
@@ -2279,47 +2276,43 @@ DEFINE_TRAMPOLINE (comutil_operator_lexpr_trap)
 DEFINE_TRAMPOLINE (comutil_operator_1_0_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  STACK_PUSH (DEFAULT_OBJECT);
+  stack_push (DEFAULT_OBJECT, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_2_0_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_2_1_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  {
-    SCHEME_OBJECT a1 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a1);
-  }
+  SCHEME_OBJECT a1 = stack_pop (tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (a1, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_3_0_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
 DEFINE_TRAMPOLINE (comutil_operator_3_1_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  {
-    SCHEME_OBJECT a1 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a1);
-  }
+  SCHEME_OBJECT a1 = stack_pop (tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (a1, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
@@ -2329,9 +2322,9 @@ DEFINE_TRAMPOLINE (comutil_operator_3_2_trap)
   {
     SCHEME_OBJECT a1 = stack_pop (tctx);
     SCHEME_OBJECT a2 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a2);
-    STACK_PUSH (a1);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (a2, tctx);
+    stack_push (a1, tctx);
   }
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
@@ -2339,10 +2332,10 @@ DEFINE_TRAMPOLINE (comutil_operator_3_2_trap)
 DEFINE_TRAMPOLINE (comutil_operator_4_0_trap)
 {
   INIT_TRAMPOLINE_1 (procedure);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
-  STACK_PUSH (DEFAULT_OBJECT);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
+  stack_push (DEFAULT_OBJECT, tctx);
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
 
@@ -2351,10 +2344,10 @@ DEFINE_TRAMPOLINE (comutil_operator_4_1_trap)
   INIT_TRAMPOLINE_1 (procedure);
   {
     SCHEME_OBJECT a1 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a1);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (a1, tctx);
   }
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
@@ -2365,10 +2358,10 @@ DEFINE_TRAMPOLINE (comutil_operator_4_2_trap)
   {
     SCHEME_OBJECT a1 = stack_pop (tctx);
     SCHEME_OBJECT a2 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a2);
-    STACK_PUSH (a1);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (a2, tctx);
+    stack_push (a1, tctx);
   }
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
@@ -2380,10 +2373,10 @@ DEFINE_TRAMPOLINE (comutil_operator_4_3_trap)
     SCHEME_OBJECT a1 = stack_pop (tctx);
     SCHEME_OBJECT a2 = stack_pop (tctx);
     SCHEME_OBJECT a3 = stack_pop (tctx);
-    STACK_PUSH (DEFAULT_OBJECT);
-    STACK_PUSH (a3);
-    STACK_PUSH (a2);
-    STACK_PUSH (a1);
+    stack_push (DEFAULT_OBJECT, tctx);
+    stack_push (a3, tctx);
+    stack_push (a2, tctx);
+    stack_push (a1, tctx);
   }
   RETURN_TO_SCHEME_ENTRY (CC_ENTRY_ADDRESS (procedure));
 }
@@ -2406,16 +2399,16 @@ DEFINE_TRAMPOLINE (comutil_operator_lookup_trap)
   long code = (compiler_operator_reference_trap (cache, (&procedure)));
   if (code != PRIM_DONE)
     {
-      STACK_PUSH (MAKE_CC_ENTRY (read_uuo_target_no_reloc (cache_addr)));
+      stack_push (MAKE_CC_ENTRY (read_uuo_target_no_reloc (cache_addr)), tctx);
       /* Next three for debugger.  */
-      STACK_PUSH (ULONG_TO_FIXNUM (frame_size));
-      STACK_PUSH (cc_block_environment (block));
-      STACK_PUSH
-	(compiler_var_error (cache, block, CACHE_REFERENCES_OPERATOR));
+      stack_push (ULONG_TO_FIXNUM (frame_size), tctx);
+      stack_push (cc_block_environment (block), tctx);
+      stack_push
+	(compiler_var_error (cache, block, CACHE_REFERENCES_OPERATOR), tctx);
       save_last_return_code (RC_COMP_OP_REF_TRAP_RESTART, tctx);
       RETURN_TO_C (code);
     }
-  TAIL_CALL_2 (comutil_apply, procedure, frame_size);
+  TAIL_CALL_2 (comutil_apply, procedure, frame_size, tctx);
 }
 
 /* Re-start after processing an error/interrupt encountered in the
@@ -2423,18 +2416,16 @@ DEFINE_TRAMPOLINE (comutil_operator_lookup_trap)
    user may have defined the missing variable) and invoke it.  */
 
 long
-comp_op_lookup_trap_restart (tctx_t* tctx)
+comp_op_lookup_trap_restart (SCHEME_OBJECT lr_offset, tctx_t* tctx)
 {
-  restore_last_return_code (tctx);
-  /* Discard debugger info.  */
-  stack_pointer = (STACK_LOC (3));
-  {
-    SCHEME_OBJECT * store
-      = (trampoline_storage (cc_entry_to_block_address (stack_pop (tctx))));
-    SCHEME_OBJECT block = (store[1]);
-    unsigned long offset = (OBJECT_DATUM (store[2]));
-    ENTER_SCHEME_ENTRY (read_uuo_target_no_reloc (MEMORY_LOC (block, offset)));
-  }
+  restore_last_return_code (lr_offset, tctx);
+  // Discard debugger info.
+  increment_sp (3, tctx);
+  SCHEME_OBJECT* store
+    = trampoline_storage (cc_entry_to_block_address (stack_pop (tctx)));
+  SCHEME_OBJECT block = store[1];
+  unsigned long offset = OBJECT_DATUM (store[2]);
+  ENTER_SCHEME_ENTRY (read_uuo_target_no_reloc (MEMORY_LOC (block, offset)));
 }
 
 /* make_uuo_link is called by C and initializes a compiled procedure
@@ -2499,14 +2490,14 @@ make_uuo_link (SCHEME_OBJECT procedure,
 
     case TC_ENTITY:
       {
-	SCHEME_OBJECT data = (MEMORY_REF (procedure, ENTITY_DATA));
-	if ((VECTOR_P (data))
-	    && (frame_size < (VECTOR_LENGTH (data)))
-	    && ((VECTOR_REF (data, frame_size)) != SHARP_F)
-	    && ((VECTOR_REF (data, 0))
-		== (VECTOR_REF (fixed_objects, ARITY_DISPATCHER_TAG))))
+	SCHEME_OBJECT data = entity_data (procedure);
+	if (VECTOR_P (data)
+	    && frame_size < VECTOR_LENGTH (data)
+	    && VECTOR_REF (data, frame_size) != SHARP_F
+	    && VECTOR_REF (data, 0)
+	       == VECTOR_REF (fixed_objects, ARITY_DISPATCHER_TAG))
 	  {
-	    procedure = (VECTOR_REF (data, frame_size));
+	    procedure = VECTOR_REF (data, frame_size);
 	    goto loop;
 	  }
 	kind = TRAMPOLINE_K_APPLY;
@@ -2769,10 +2760,6 @@ DEFINE_SCHEME_UTILITY_2 (comutil_compiled_code_bkpt, entry_addr, state)
 {
   DECLARE_UTILITY_ARG (insn_t *, entry_addr);
   DECLARE_UTILITY_ARG (void *, state);
-  SCHEME_OBJECT entry = (MAKE_CC_ENTRY (entry_addr));
-  cc_entry_type_t cet;
-  SCHEME_OBJECT to_save;
-  SCHEME_OBJECT stack_ptr;
 
   /* Potential bug: This does not preserve the environment for IC
      procedures.  There is no way to tell that we have an IC procedure
@@ -2781,25 +2768,27 @@ DEFINE_SCHEME_UTILITY_2 (comutil_compiled_code_bkpt, entry_addr, state)
      However, the compiler no longer generates IC procedures, and will
      probably never do it again.  */
 
-  if (read_cc_entry_type ((&cet), entry_addr))
+  cc_entry_type_t cet;
+  SCHEME_OBJECT to_save;
+  if (read_cc_entry_type (&cet, entry_addr))
     to_save = SHARP_F;
   else
     switch (cet.marker)
       {
 	case CET_CONTINUATION:
-	  to_save = GET_VAL;
+	  to_save = GET_CC_VAL;
 	  break;
 
 	case CET_INTERNAL_CONTINUATION:
-	  to_save = (MAKE_CC_STACK_ENV ((SCHEME_OBJECT *) state));
+	  to_save = MAKE_CC_STACK_ENV ((SCHEME_OBJECT *) state);
 	  break;
 
 	case CET_RETURN_TO_INTERPRETER:
-	  to_save = GET_VAL;
+	  to_save = GET_CC_VAL;
 	  break;
 
 	case CET_CLOSURE:
-	  to_save = (MAKE_CC_ENTRY ((insn_t *) state));
+	  to_save = MAKE_CC_ENTRY ((insn_t *) state);
 	  break;
 
 	default:
@@ -2807,30 +2796,32 @@ DEFINE_SCHEME_UTILITY_2 (comutil_compiled_code_bkpt, entry_addr, state)
 	  break;
 	}
 
-  STACK_PUSH (entry);
-  stack_ptr = (MAKE_CC_STACK_ENV (stack_pointer));
-  STACK_PUSH (to_save);
-  STACK_PUSH (stack_ptr);
-  STACK_PUSH (entry);
+  SCHEME_OBJECT entry = MAKE_CC_ENTRY (entry_addr);
+  stack_push (entry, tctx);
+  SCHEME_OBJECT stack_ptr = MAKE_CC_STACK_ENV (stack_pointer (tctx));
+  stack_push (to_save, tctx);
+  stack_push (stack_ptr, tctx);
+  stack_push (entry, tctx);
   TAIL_CALL_2 (comutil_apply,
-	       (VECTOR_REF (fixed_objects, CC_BKPT_PROCEDURE)),
-	       4);
+	       VECTOR_REF (fixed_objects, CC_BKPT_PROCEDURE),
+	       4,
+               tctx);
 }
 
 DEFINE_SCHEME_UTILITY_1 (comutil_compiled_closure_bkpt, entry_addr)
 {
   DECLARE_UTILITY_ARG (insn_t *, entry_addr);
-  SCHEME_OBJECT entry = (MAKE_CC_ENTRY (entry_addr));
-  SCHEME_OBJECT stack_ptr;
 
-  STACK_PUSH (entry);
-  stack_ptr = (MAKE_CC_STACK_ENV (stack_pointer));
-  STACK_PUSH (SHARP_F);
-  STACK_PUSH (stack_ptr);
-  STACK_PUSH (entry);
+  SCHEME_OBJECT entry = MAKE_CC_ENTRY (entry_addr);
+  stack_push (entry, tctx);
+  SCHEME_OBJECT stack_ptr = MAKE_CC_STACK_ENV (stack_pointer (tctx));
+  stack_push (SHARP_F, tctx);
+  stack_push (stack_ptr, tctx);
+  stack_push (entry, tctx);
   TAIL_CALL_2 (comutil_apply,
-	       (VECTOR_REF (fixed_objects, CC_BKPT_PROCEDURE)),
-	       4);
+	       VECTOR_REF (fixed_objects, CC_BKPT_PROCEDURE),
+	       4,
+               tctx);
 }
 
 /* Utility table used by the assembly language interface to invoke the

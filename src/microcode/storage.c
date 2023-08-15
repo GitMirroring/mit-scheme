@@ -53,10 +53,6 @@ SCHEME_OBJECT * constant_alloc_next;
 SCHEME_OBJECT * constant_start;
 SCHEME_OBJECT * constant_end;
 
-/* Address of the most recent return code in the stack.
-   This is only meaningful while in compiled code.  */
-SCHEME_OBJECT * last_return_code;
-
 SCHEME_OBJECT fixed_objects;
 
 /* Array of contiguous auxiliary storage, one entry per ephemeron, for

@@ -675,13 +675,13 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
   push_cont_rc (RC_INTERNAL_APPLY, c_call_continue, tctx);
 
   SCM* saved_stack_pointer = stack_pointer (tctx);
-  SCM* saved_last_return_code = last_return_code;
+  SCM* saved_last_return_code = last_return_code (tctx);
   stack_check ((2 * CONTINUATION_SIZE) + STACK_ENV_EXTRA_SLOTS + 1, tctx);
   push_cont_rc (RC_END_OF_COMPUTATION, run_callback, tctx);
   stack_push (run_callback, tctx);
   stack_push (make_apply_frame_header (1), tctx);
   push_cont_rc (RC_INTERNAL_APPLY, run_callback, tctx);
-  last_return_code = stack_pointer (tctx);
+  set_last_return_code (stack_pointer (tctx), tctx);
   Re_Enter_Interpreter (SHARP_F, ???, tctx);
 
   if (stack_pointer (tctx) != saved_stack_pointer
@@ -701,7 +701,7 @@ callback_run_kernel (long callback_id, CallbackKernel kernel)
     }
 
   increment_sp (4, tctx);
-  last_return_code = saved_last_return_code;
+  set_last_return_code (saved_last_return_code, tctx);
   set_primitive (c_call_continue, tctx);
   set_primitive_lexpr_actuals (nargs, tctx);
 

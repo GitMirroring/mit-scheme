@@ -86,9 +86,6 @@ extern SCHEME_OBJECT * constant_alloc_next;
 extern SCHEME_OBJECT * constant_start;
 extern SCHEME_OBJECT * constant_end;
 
-/* Address of the most recent return code in the stack.  This is
-   only meaningful while in compiled code.  */
-extern SCHEME_OBJECT * last_return_code;
 extern SCHEME_OBJECT fixed_objects;
 
 extern SCHEME_OBJECT ephemeron_array;

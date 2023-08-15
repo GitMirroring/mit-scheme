@@ -45,8 +45,10 @@ init_tctx (tctx_t* tctx, unsigned long size, SCHEME_OBJECT* block)
   tctx->restore_history_offset = 0;
   tctx->state = 0;
   tctx->prim_apply_error_code = PRIM_DONE;
+  tctx->last_return_code = 0;
   tctx->primitive = SHARP_F;
   tctx->primitive_free = 0;
+  tctx->primitive_lexpr_actuals = 0;
 }
 
 #if 0
