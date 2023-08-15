@@ -200,5 +200,5 @@ DEFINE_PRIMITIVE ("CC-BLOCK-LINKAGE-INFO", Prim_cc_block_linkage_info, 1, 1, 0)
 {
   PRIMITIVE_HEADER (1);
   CHECK_ARG (1, CC_BLOCK_P);
-  PRIMITIVE_RETURN (cc_block_linkage_info (ARG_REF (1)));
+  PRIMITIVE_RETURN (cc_block_linkage_info (ARG_REF (1), tctx));
 }

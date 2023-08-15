@@ -30,6 +30,8 @@ USA.
 #ifndef SCM_MEMMAG_H
 #define SCM_MEMMAG_H 1
 
+#include "extern.h"
+
 /* Overflow detection, various cases */
 
 #define GC_ENABLED_P() (INTERRUPT_ENABLED_P (INT_GC))
@@ -53,11 +55,14 @@ USA.
    ? ((unsigned long) (heap_end - Free))				\
    : 0)
 
-#define REQUEST_GC(n_words) do						\
-{									\
-  REQUEST_INTERRUPT (INT_GC);						\
-  gc_space_needed = (n_words);						\
-} while (0)
+static inline void
+request_gc (unsigned long n_words, tctx_t* tctx)
+{
+  request_interrupt (INT_GC, tctx);
+  gc_space_needed = n_words;
+}
+
+#define REQUEST_GC(n_words) (request_gc ((n_words), current_tctx ()))
 
 #define ARG_HEAP_RESERVED(n)						\
   (arg_ulong_index_integer ((n), ((heap_end - heap_start) / 2)))

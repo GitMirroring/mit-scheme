@@ -466,7 +466,7 @@ extern SCHEME_OBJECT reflect_to_interface;
 
 extern SCHEME_OBJECT cc_block_debugging_info (SCHEME_OBJECT);
 extern SCHEME_OBJECT cc_block_environment (SCHEME_OBJECT);
-extern SCHEME_OBJECT cc_block_linkage_info (SCHEME_OBJECT);
+extern SCHEME_OBJECT cc_block_linkage_info (SCHEME_OBJECT, tctx_t*);
 
 extern long enter_compiled_expression (SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
 extern void guarantee_cc_return (unsigned long, tctx_t*);
@@ -502,8 +502,9 @@ extern long return_to_compiled_code (SCHEME_OBJECT, tctx_t*);
 extern SCHEME_OBJECT bkpt_install (insn_t*);
 extern SCHEME_OBJECT bkpt_closure_install (insn_t*);
 extern bool bkpt_p (insn_t*);
-extern SCHEME_OBJECT bkpt_proceed (insn_t*, SCHEME_OBJECT, SCHEME_OBJECT);
-extern long do_bkpt_proceed (insn_t**);
+extern SCHEME_OBJECT bkpt_proceed
+  (insn_t*, SCHEME_OBJECT, SCHEME_OBJECT, tctx_t*);
+extern long do_bkpt_proceed (insn_t**, tctx_t*);
 extern void bkpt_remove (insn_t*, SCHEME_OBJECT);
 
 extern int pc_to_utility_index (unsigned long);

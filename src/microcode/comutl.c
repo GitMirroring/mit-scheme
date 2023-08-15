@@ -319,20 +319,15 @@ Returns false or a handled needed by REMOVE-BKPT and ONE-STEP-PROCEED.")
 {
   PRIMITIVE_HEADER (1);
   CHECK_ARG (1, CC_ENTRY_P);
+  void* entry = OBJECT_ADDRESS (ARG_REF (1));
+  if (bkpt_p (entry))
+    error_bad_range_arg (1);
 
-  {
-    SCHEME_OBJECT * entry = (OBJECT_ADDRESS (ARG_REF (1)));
-    SCHEME_OBJECT * block;
-
-    if (bkpt_p ((void *) entry))
-      error_bad_range_arg (1);
-
-    block = (cc_entry_to_block_address (ARG_REF (1)));
-    if ((OBJECT_TYPE (block[0])) == TC_MANIFEST_CLOSURE)
-      PRIMITIVE_RETURN (bkpt_closure_install ((void *) entry));
-    else
-      PRIMITIVE_RETURN (bkpt_install ((void *) entry));
-  }
+  SCHEME_OBJECT* block = cc_entry_to_block_address (ARG_REF (1));
+  PRIMITIVE_RETURN
+    ((OBJECT_TYPE (block[0]) == TC_MANIFEST_CLOSURE)
+     ? bkpt_closure_install (entry)
+     : bkpt_install (entry));
 }
 
 DEFINE_PRIMITIVE ("BKPT/REMOVE", Prim_remove_bkpt, 2, 2,
@@ -342,16 +337,13 @@ Remove a breakpoint trap installed by INSTALL-BKPT.")
   PRIMITIVE_HEADER (2);
   CHECK_ARG (1, CC_ENTRY_P);
   CHECK_ARG (2, NON_MARKED_VECTOR_P);
+  void* entry = OBJECT_ADDRESS (ARG_REF (1));
+  if (!bkpt_p (entry))
+    error_bad_range_arg (1);
+  SCHEME_OBJECT handle = ARG_REF (2);
 
-  {
-    SCHEME_OBJECT * entry = (OBJECT_ADDRESS (ARG_REF (1)));
-    SCHEME_OBJECT handle = (ARG_REF (2));
-
-    if (! (bkpt_p ((void *) entry)))
-      error_bad_range_arg (1);
-    bkpt_remove (((void *) entry), handle);
-    PRIMITIVE_RETURN (UNSPECIFIC);
-  }
+  bkpt_remove (entry, handle);
+  PRIMITIVE_RETURN (UNSPECIFIC);
 }
 
 DEFINE_PRIMITIVE ("BKPT?", Prim_bkpt_p, 1, 1,
@@ -360,9 +352,8 @@ True if there is a breakpoint trap in compiled-entry-object.")
 {
   PRIMITIVE_HEADER (1);
   CHECK_ARG (1, CC_ENTRY_P);
-
-  PRIMITIVE_RETURN (BOOLEAN_TO_OBJECT
-		    (bkpt_p ((void *) (OBJECT_ADDRESS (ARG_REF (1))))));
+  PRIMITIVE_RETURN
+    (BOOLEAN_TO_OBJECT (bkpt_p ((void*) OBJECT_ADDRESS (ARG_REF (1)))));
 }
 
 DEFINE_PRIMITIVE ("BKPT/PROCEED", Prim_bkpt_proceed, 3, 3,
@@ -372,8 +363,8 @@ Proceed the computation from the current breakpoint.")
   PRIMITIVE_HEADER (3);
   CHECK_ARG (1, CC_ENTRY_P);
   CHECK_ARG (2, NON_MARKED_VECTOR_P);
-
-  PRIMITIVE_RETURN (bkpt_proceed (((void *) (OBJECT_ADDRESS (ARG_REF (1)))),
-				  (ARG_REF (2)),
-				  (ARG_REF (3))));
+  PRIMITIVE_RETURN (bkpt_proceed ((void*) OBJECT_ADDRESS (ARG_REF (1)),
+				  ARG_REF (2),
+				  ARG_REF (3),
+                                  tctx));
 }

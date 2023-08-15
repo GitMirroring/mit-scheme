@@ -62,6 +62,7 @@ typedef struct
   // Address of the most recent return code in the stack.  This is only
   // meaningful while in compiled code.
   SCHEME_OBJECT* last_return_code;
+  bool linking_cc_block_p;
 
   SCHEME_OBJECT primitive;
   SCHEME_OBJECT* primitive_free;
@@ -289,6 +290,18 @@ static inline void
 set_prim_apply_error_code (long code, tctx_t* tctx)
 {
   tctx->prim_apply_error_code = code;
+}
+
+static inline bool
+linking_cc_block_p (tctx_t* tctx)
+{
+  return tctx->linking_cc_block_p;
+}
+
+static inline void
+set_linking_cc_block_p (bool linking, tctx_t* tctx)
+{
+  tctx->linking_cc_block_p = linking;
 }
 
 static inline SCHEME_OBJECT*

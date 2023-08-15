@@ -57,12 +57,12 @@ typedef long cache_handler_t (SCHEME_OBJECT, SCHEME_OBJECT, unsigned long);
 
 typedef struct
 {
-  SCHEME_OBJECT * block_address;
-  SCHEME_OBJECT * scan;
+  SCHEME_OBJECT* block_address;
+  SCHEME_OBJECT* scan;
   unsigned long n_sections;
-  insn_t * return_address;
+  insn_t* return_address;
   unsigned long n_linked_sections;
-  SCHEME_OBJECT * scan0;
+  SCHEME_OBJECT* scan0;
   linkage_section_type_t type;
   unsigned long n_entries;
   unsigned long n_linked_entries;
@@ -122,16 +122,14 @@ SCHEME_OBJECT compiler_utilities;
 SCHEME_OBJECT return_to_interpreter;
 SCHEME_OBJECT reflect_to_interface;
 
-static bool linking_cc_block_p = 0;
-
 static SCHEME_OBJECT make_compiler_utilities (tctx_t*);
 static void open_stack_gap (unsigned long, unsigned long, tctx_t*);
 static void close_stack_gap (unsigned long, unsigned long, tctx_t*);
 static void recover_from_apply_error (SCHEME_OBJECT, unsigned long, tctx_t*);
 static long link_remaining_sections (link_cc_state_t*, tctx_t*);
-static void start_linking_cc_block (void);
+static void start_linking_cc_block (tctx_t*);
 static void end_linking_cc_block (link_cc_state_t*);
-static void abort_linking_cc_block (void*);
+static void restore_linking_cc_block_p (void*);
 static void update_cache_after_link (link_cc_state_t*);
 static void start_linking_section (link_cc_state_t*);
 static long link_section (link_cc_state_t*, tctx_t*);
@@ -174,87 +172,75 @@ static long make_apply_trampoline
    typedef insn_t* c_func_t;
 #else
    typedef void c_func_t (void);
-/* From trunk, but may not be needed: */
-#  if 0
-#    ifdef __OPEN_WATCOM_14__
-#      define REFENTRY(name) ((void *) name)
-#    else
-#      define REFENTRY(name) ((c_func_t *) name)
-#    endif
-#    define VARENTRY(name) c_func_t * name
-#    define EXTENTRY(name) extern c_func_t ASM_ENTRY_POINT (name)
-#  endif
 #endif
 
-#define RETURN_TO_C(code) do						\
-{									\
-  (DSU_result->interface_dispatch) = interface_to_C;			\
-  ((DSU_result->extra) . code_to_interpreter) = (code);			\
-  return;								\
+#define RETURN_TO_C(code) do                                            \
+{                                                                       \
+  DSU_result->interface_dispatch = interface_to_C;                      \
+  DSU_result->extra.code_to_interpreter = (code);                       \
+  return;                                                               \
 } while (false)
 
-#define RETURN_TO_SCHEME_ENTRY(ep) do					\
-{									\
-  insn_t * ep_ = (ep);							\
-  (DSU_result->interface_dispatch) = interface_to_scheme;		\
-  ((DSU_result->extra) . compiled_code . ptr) = (CC_ENTRY_ADDRESS_PTR (ep_)); \
-  ((DSU_result->extra) . compiled_code . pc) = (CC_ENTRY_ADDRESS_PC (ep_)); \
-  return;								\
+#define RETURN_TO_SCHEME_ENTRY(ep) do                                   \
+{                                                                       \
+  insn_t* ep_ = (ep);                                                   \
+  DSU_result->interface_dispatch = interface_to_scheme;                 \
+  DSU_result->extra.compiled_code.ptr = CC_ENTRY_ADDRESS_PTR (ep_);     \
+  DSU_result->extra.compiled_code.pc = CC_ENTRY_ADDRESS_PC (ep_);       \
+  return;                                                               \
 } while (false)
 
-#define RETURN_TO_SCHEME_CONTINUATION(c) do				\
-{									\
-  insn_t * c_ = (c);							\
-  (DSU_result->interface_dispatch) = interface_to_scheme;		\
-  ((DSU_result->extra) . compiled_code . ptr) = (CC_RETURN_ADDRESS_PTR (c_)); \
-  ((DSU_result->extra) . compiled_code . pc) = (CC_RETURN_ADDRESS_PC (c_)); \
-  return;								\
+#define RETURN_TO_SCHEME_CONTINUATION(c) do                             \
+{                                                                       \
+  insn_t* c_ = (c);                                                     \
+  DSU_result->interface_dispatch = interface_to_scheme;                 \
+  DSU_result->extra.compiled_code.ptr = CC_RETURN_ADDRESS_PTR (c_);     \
+  DSU_result->extra.compiled_code.pc = CC_RETURN_ADDRESS_PC (c_);       \
+  return;                                                               \
 } while (false)
 
 extern c_func_t ASM_ENTRY_POINT (interface_to_C);
 extern c_func_t ASM_ENTRY_POINT (interface_to_scheme);
 extern c_func_t ASM_ENTRY_POINT (interface_to_scheme_return);
 
-#define ENTER_SCHEME_ENTRY(ep) do					\
-{									\
-  insn_t * ep_ = (ep);							\
-  return								\
-    (C_to_interface							\
-     ((CC_ENTRY_ADDRESS_PTR (ep_)), (CC_ENTRY_ADDRESS_PC (ep_))));	\
+#define ENTER_SCHEME_ENTRY(ep) do                                       \
+{                                                                       \
+  insn_t* ep_ = (ep);                                                   \
+  return C_to_interface (CC_ENTRY_ADDRESS_PTR (ep_),                    \
+                         CC_ENTRY_ADDRESS_PC (ep_));                    \
 } while (false)
 
-#define ENTER_SCHEME_CONTINUATION(c) do					\
-{									\
-  insn_t * c_ = (c);							\
-  return								\
-    (C_to_interface							\
-     ((CC_RETURN_ADDRESS_PTR (c_)), (CC_RETURN_ADDRESS_PC (c_))));	\
+#define ENTER_SCHEME_CONTINUATION(c) do                                 \
+{                                                                       \
+  insn_t* c_ = (c);                                                     \
+  return C_to_interface (CC_RETURN_ADDRESS_PTR (c_),                    \
+                         CC_RETURN_ADDRESS_PC (c_));                    \
 } while (false)
 
-extern long ASM_ENTRY_POINT (C_to_interface) (insn_t *, insn_t *);
+extern long ASM_ENTRY_POINT (C_to_interface) (insn_t*, insn_t*);
 
 #else /* !CMPINT_USE_STRUCS */
 
-#define RETURN_TO_C(code) do						\
-{									\
-  (*DSU_result) = interface_to_C_hook;					\
-  C_return_value = (code);						\
-  return;								\
+#define RETURN_TO_C(code) do                                            \
+{                                                                       \
+  *DSU_result = interface_to_C_hook;                                    \
+  C_return_value = (code);                                              \
+  return;                                                               \
 } while (false)
 
 /* Assume entries and returns have the same address representation.  */
 
-#define RETURN_TO_SCHEME_ENTRY(ep) do					\
-{									\
-  (*DSU_result) = (ep);							\
-  return;								\
+#define RETURN_TO_SCHEME_ENTRY(ep) do                                   \
+{                                                                       \
+  *DSU_result = (ep);                                                   \
+  return;                                                               \
 } while (false)
 #define RETURN_TO_SCHEME_CONTINUATION RETURN_TO_SCHEME_ENTRY
 
-#define ENTER_SCHEME_ENTRY(ep) do					\
-{									\
-  C_to_interface (ep);							\
-  return (C_return_value);						\
+#define ENTER_SCHEME_ENTRY(ep) do                                       \
+{                                                                       \
+  C_to_interface (ep);                                                  \
+  return C_return_value;                                                \
 } while (false)
 #define ENTER_SCHEME_CONTINUATION ENTER_SCHEME_ENTRY
 
@@ -301,6 +287,8 @@ long C_return_value;
 #ifndef ASM_RESET_HOOK
 #  define ASM_RESET_HOOK(tctx) do {} while (false)
 #endif
+
+#define SAVE_LAST_RETURN_CODE_PUSHES 2
 
 static inline void
 save_last_return_code (unsigned long rc, tctx_t* tctx)
@@ -413,7 +401,7 @@ compiler_reset (SCHEME_OBJECT new_block, tctx_t* tctx)
   SCHEME_OBJECT h1;
   SCHEME_OBJECT h2;
   unsigned long n_words;
-  SCHEME_OBJECT * nbp;
+  SCHEME_OBJECT* nbp;
 
   COMPILER_UTILITIES_HEADERS (&h1, &h2, &n_words);
   h1 = OBJECT_NEW_TYPE (TC_MANIFEST_VECTOR, h1);
@@ -449,10 +437,12 @@ enter_compiled_expression (SCHEME_OBJECT exp, SCHEME_OBJECT env, tctx_t* tctx)
   if (cet.marker != CET_EXPRESSION)
     {
       /* evaluate to self */
+      reset_vals (tctx);
       add_val (exp, tctx);
       return PRIM_DONE;
     }
   guarantee_cc_return (0, tctx);
+  SET_CC_ENV (env);
   JUMP_TO_CC_ENTRY (exp);
 }
 
@@ -762,7 +752,7 @@ DEFINE_SCHEME_UTILITY_2 (comutil_apply, procedure, frame_size)
 
 DEFINE_SCHEME_UTILITY_2 (comutil_lexpr_apply, address, n_args)
 {
-  DECLARE_UTILITY_ARG (insn_t *, address);
+  DECLARE_UTILITY_ARG (insn_t*, address);
   DECLARE_UTILITY_ARG (unsigned long, n_args);
   cc_entry_type_t cet;
 
@@ -843,9 +833,9 @@ DEFINE_SCHEME_UTILITY_4 (comutil_link,
 			 constant_addr,
 			 n_sections)
 {
-  DECLARE_UTILITY_ARG (insn_t *, return_addr);
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, block_addr);
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, constant_addr);
+  DECLARE_UTILITY_ARG (insn_t*, return_addr);
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, block_addr);
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, constant_addr);
   DECLARE_UTILITY_ARG (unsigned long, n_sections);
   link_cc_state_t s;
 
@@ -855,7 +845,7 @@ DEFINE_SCHEME_UTILITY_4 (comutil_link,
   s.n_sections = n_sections;
   s.n_linked_sections = 0;
 
-  start_linking_cc_block ();
+  start_linking_cc_block (tctx);
   long result = link_remaining_sections (&s, tctx);
   end_linking_cc_block (&s);
   if (result != PRIM_DONE)
@@ -873,7 +863,7 @@ comp_link_caches_restart (SCHEME_OBJECT offset, tctx_t* tctx)
   restore_link_cc_state (&s, offset, tctx);
   SET_CC_ENV (cc_block_environment (MAKE_CC_BLOCK (s.block_address)));
 
-  start_linking_cc_block ();
+  start_linking_cc_block (tctx);
 
   long result = (link_section (&s, tctx));
   if (result == PRIM_DONE)
@@ -899,14 +889,21 @@ link_remaining_sections (link_cc_state_t* s, tctx_t* tctx)
   return (PRIM_DONE);
 }
 
-static void
-start_linking_cc_block (void)
+typedef struct
 {
-  bool* ap = dstack_alloc (sizeof (bool));
-  *ap = linking_cc_block_p;
+  bool saved_linking;
+  tctx_t* tctx;
+} abort_linking_t;
+
+static void
+start_linking_cc_block (tctx_t* tctx)
+{
+  abort_linking_t* al = dstack_alloc (sizeof (abort_linking_t));
+  al->saved_linking = linking_cc_block_p (tctx);
+  al->tctx = tctx;
   transaction_begin ();
-  transaction_record_action (tat_always, abort_linking_cc_block, ap);
-  linking_cc_block_p = 1;
+  transaction_record_action (tat_always, restore_linking_cc_block_p, al);
+  set_linking_cc_block_p (true, tctx);
 }
 
 static void
@@ -917,9 +914,10 @@ end_linking_cc_block (link_cc_state_t* s)
 }
 
 static void
-abort_linking_cc_block (void* ap)
+restore_linking_cc_block_p (void* ap)
 {
-  linking_cc_block_p = *((bool*) ap);
+  abort_linking_t* al = (abort_linking_t*) ap;
+  set_linking_cc_block_p (al->saved_linking, al->tctx);
 }
 
 static void
@@ -1015,29 +1013,29 @@ link_section (link_cc_state_t* s, tctx_t* tctx)
 
 static bool
 link_section_handler (linkage_section_type_t type,
-		      cache_handler_t ** handler_r,
-		      bool * execute_p_r)
+		      cache_handler_t** handler_r,
+		      bool* execute_p_r)
 {
   switch (type)
     {
     case LINKAGE_SECTION_TYPE_OPERATOR:
-      (*handler_r) = compiler_cache_operator;
-      (*execute_p_r) = true;
+      *handler_r = compiler_cache_operator;
+      *execute_p_r = true;
       return (true);
 
     case LINKAGE_SECTION_TYPE_GLOBAL_OPERATOR:
-      (*handler_r) = compiler_cache_global_operator;
-      (*execute_p_r) = true;
+      *handler_r = compiler_cache_global_operator;
+      *execute_p_r = true;
       return (true);
 
     case LINKAGE_SECTION_TYPE_REFERENCE:
-      (*handler_r) = compiler_cache_lookup;
-      (*execute_p_r) = false;
+      *handler_r = compiler_cache_lookup;
+      *execute_p_r = false;
       return (true);
 
     case LINKAGE_SECTION_TYPE_ASSIGNMENT:
-      (*handler_r) = compiler_cache_assignment;
-      (*execute_p_r) = false;
+      *handler_r = compiler_cache_assignment;
+      *execute_p_r = false;
       return (true);
 
     default:
@@ -1070,13 +1068,12 @@ restore_link_cc_state (link_cc_state_t* s, SCHEME_OBJECT offset, tctx_t* tctx)
   s->scan0 = s->block_address + OBJECT_DATUM (stack_pop (tctx));
   s->n_sections = OBJECT_DATUM (stack_pop (tctx));
   s->return_address = CC_RETURN_ADDRESS (stack_pop (tctx));
-
   s->n_linked_sections = 0;
   s->type = linkage_section_type (*s->scan0);
 }
 
 SCHEME_OBJECT
-cc_block_linkage_info (SCHEME_OBJECT block)
+cc_block_linkage_info (SCHEME_OBJECT block, tctx_t* tctx)
 {
   SCHEME_OBJECT* const_addr
     = VECTOR_LOC
@@ -1084,84 +1081,81 @@ cc_block_linkage_info (SCHEME_OBJECT block)
          1
          + VECTOR_LENGTH (MAKE_POINTER_OBJECT (TC_VECTOR,
                                                VECTOR_LOC (block, 0))));
-  SCHEME_OBJECT* block_end = (CC_BLOCK_END (block));
+  SCHEME_OBJECT* block_end = CC_BLOCK_END (block);
   unsigned long n_sections;
   unsigned long n_words;
-
   count_linkage_sections (const_addr, block_end, (&n_sections), (&n_words));
-  primitive_gc_if_needed (n_words, current_tctx ());
+  primitive_gc_if_needed (n_words, tctx);
   return (read_linkage_sections (const_addr, block_end, n_sections, n_words));
 }
 
 static void
-count_linkage_sections (SCHEME_OBJECT * const_addr,
-			SCHEME_OBJECT * block_end,
-			unsigned long * n_sections,
-			unsigned long * n_words)
+count_linkage_sections (SCHEME_OBJECT* const_addr,
+			SCHEME_OBJECT* block_end,
+			unsigned long* n_sections,
+			unsigned long* n_words)
 {
-  SCHEME_OBJECT * scan = const_addr;
-  (*n_sections) = 0;
-  (*n_words) = 1;
+  SCHEME_OBJECT* scan = const_addr;
+  *n_sections = 0;
+  *n_words = 1;
   while (unlinked_section_start_p (scan, block_end))
     {
-      SCHEME_OBJECT h = (*scan++);
-      unsigned long count = (linkage_section_count (h));
-      (*n_sections) += 1;
+      SCHEME_OBJECT h = *scan++;
+      unsigned long count = linkage_section_count (h);
+      *n_sections += 1;
       /* One word for sections vector, one word for vector header,
 	 one word for type, rest for names.  */
-      (*n_words) += (3 + count);
+      *n_words += 3 + count;
       scan +=
-	((section_execute_p (h))
-	 ? (OPERATOR_RELOCATION_OFFSET + (count * UUO_LINK_SIZE))
-	 : count);
+	section_execute_p (h)
+	? OPERATOR_RELOCATION_OFFSET + (count * UUO_LINK_SIZE)
+	: count;
     }
 }
 
 static SCHEME_OBJECT
-read_linkage_sections (SCHEME_OBJECT * const_addr,
-		       SCHEME_OBJECT * block_end,
+read_linkage_sections (SCHEME_OBJECT* const_addr,
+		       SCHEME_OBJECT* block_end,
 		       unsigned long n_sections,
 		       unsigned long n_words)
 {
-  SCHEME_OBJECT * scan = const_addr;
-  SCHEME_OBJECT sections = (make_vector (n_sections, SHARP_F, false));
-  SCHEME_OBJECT * sp = (VECTOR_LOC (sections, 0));
-  SCHEME_OBJECT * spe = (VECTOR_LOC (sections, (VECTOR_LENGTH (sections))));
+  SCHEME_OBJECT* scan = const_addr;
+  SCHEME_OBJECT sections = make_vector (n_sections, SHARP_F, false);
+  SCHEME_OBJECT* sp = VECTOR_LOC (sections, 0);
+  SCHEME_OBJECT* spe = VECTOR_LOC (sections, VECTOR_LENGTH (sections));
   while (sp < spe)
     {
-      SCHEME_OBJECT h = (*scan++);
+      SCHEME_OBJECT h = *scan++;
       SCHEME_OBJECT section
-	= (make_vector ((1 + (linkage_section_count (h))), SHARP_F, false));
-      SCHEME_OBJECT * p = (VECTOR_LOC (section, 0));
-      SCHEME_OBJECT * pe = (VECTOR_LOC (section, (VECTOR_LENGTH (section))));
+	= make_vector (1 + linkage_section_count (h), SHARP_F, false);
+      SCHEME_OBJECT* p = VECTOR_LOC (section, 0);
+      SCHEME_OBJECT* pe = VECTOR_LOC (section, VECTOR_LENGTH (section));
 
-      (*p++) = (ULONG_TO_FIXNUM ((unsigned long) (linkage_section_type (h))));
+      *p++ = ULONG_TO_FIXNUM ((unsigned long) linkage_section_type (h));
       if (section_execute_p (h))
 	{
 	  scan += OPERATOR_RELOCATION_OFFSET;
 	  while (p < pe)
 	    {
-	      (*p++) = (read_uuo_symbol (scan));
+	      *p++ = read_uuo_symbol (scan);
 	      scan += UUO_LINK_SIZE;
 	    }
 	}
       else
 	while (p < pe)
-	  (*p++) = (*scan++);
+	  *p++ = *scan++;
 
-      (*sp++) = section;
+      *sp++ = section;
     }
-
-  return (sections);
+  return sections;
 }
 
 static bool
 section_execute_p (SCHEME_OBJECT h)
 {
-  linkage_section_type_t type = (linkage_section_type (h));
-  return
-    ((type == LINKAGE_SECTION_TYPE_OPERATOR)
-     || (type == LINKAGE_SECTION_TYPE_GLOBAL_OPERATOR));
+  linkage_section_type_t type = linkage_section_type (h);
+  return type == LINKAGE_SECTION_TYPE_OPERATOR
+         || type == LINKAGE_SECTION_TYPE_GLOBAL_OPERATOR;
 }
 
 /* Interrupt/GC from Scheme
@@ -1187,8 +1181,8 @@ DEFINE_SCHEME_UTILITY_0 (comutil_interrupt_closure)
 
 DEFINE_SCHEME_UTILITY_2 (comutil_interrupt_dlink, entry_point, dlink)
 {
-  DECLARE_UTILITY_ARG (insn_t *, entry_point);
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, dlink);
+  DECLARE_UTILITY_ARG (insn_t*, entry_point);
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, dlink);
   compiler_interrupt_common (DSU_result,
 			     entry_point,
 			     MAKE_CC_STACK_ENV (dlink),
@@ -1197,7 +1191,7 @@ DEFINE_SCHEME_UTILITY_2 (comutil_interrupt_dlink, entry_point, dlink)
 
 DEFINE_SCHEME_UTILITY_1 (comutil_interrupt_procedure, entry_point)
 {
-  DECLARE_UTILITY_ARG (insn_t *, entry_point);
+  DECLARE_UTILITY_ARG (insn_t*, entry_point);
   compiler_interrupt_common (DSU_result, entry_point, SHARP_F, tctx);
 }
 
@@ -1242,18 +1236,19 @@ compiler_interrupt_return_to_entry (tctx_t* tctx)
 }
 
 void
-compiler_interrupt_common (utility_result_t * DSU_result,
-			   insn_t * entry_address,
-			   SCHEME_OBJECT state,
+compiler_interrupt_common (utility_result_t* DSU_result,
+			   insn_t* entry_address,
+			   SCHEME_OBJECT val_or_env,
                            tctx_t* tctx)
 {
   if (!FREE_OK_P (Free))
-    REQUEST_GC (Free - heap_alloc_limit);
-  stack_check (2, tctx);
+    request_gc (Free - heap_alloc_limit, tctx);
+  stack_check (2 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
   if (entry_address != 0)
     stack_push (MAKE_CC_ENTRY (entry_address), tctx);
-  assert (CC_ENTRY_P (stack_ref (0, tctx)));
-  stack_push (state, tctx);
+  else
+    assert (CC_ENTRY_P (stack_ref (0, tctx)));
+  stack_push (val_or_env, tctx);
   save_last_return_code (RC_COMP_INTERRUPT_RESTART, tctx);
   RETURN_TO_C (PRIM_INTERRUPT);
 }
@@ -1262,9 +1257,10 @@ long
 comp_interrupt_restart (SCHEME_OBJECT offset, tctx_t* tctx)
 {
   restore_last_return_code (offset, tctx);
-  SCHEME_OBJECT state = stack_pop (tctx);
-  SET_CC_ENV (state);
-  SET_CC_VAL (state);
+  // Saved object could be either val or env, so set both.
+  SCHEME_OBJECT val_or_env = stack_pop (tctx);
+  SET_CC_VAL (val_or_env);
+  SET_CC_ENV (val_or_env);
   JUMP_TO_CC_ENTRY (stack_pop (tctx));
 }
 
@@ -1276,20 +1272,20 @@ setup_lookup_restart (long code, insn_t* ret_addr, SCHEME_OBJECT cache,
 {
   SCHEME_OBJECT sra = MAKE_CC_RETURN (ret_addr);
   SCHEME_OBJECT block = cc_return_to_block (sra);
+  stack_check (3 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
   stack_push (sra, tctx);
   stack_push (cc_block_environment (block), tctx);
   stack_push (compiler_var_error (cache, block, CACHE_REFERENCES_LOOKUP), tctx);
   save_last_return_code (rc, tctx);
 }
 
-
 /* Assigning a variable that contains a trap.  */
 
 DEFINE_SCHEME_UTILITY_3 (comutil_assignment_trap,
 			 ret_addr, cache_addr, new_val)
 {
-  DECLARE_UTILITY_ARG (insn_t *, ret_addr);
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, cache_addr);
+  DECLARE_UTILITY_ARG (insn_t*, ret_addr);
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, cache_addr);
   DECLARE_UTILITY_ARG (SCHEME_OBJECT, new_val);
   SCHEME_OBJECT cache = (MAKE_POINTER_OBJECT (CACHE_TYPE, cache_addr));
   SCHEME_OBJECT old_val;
@@ -1298,6 +1294,7 @@ DEFINE_SCHEME_UTILITY_3 (comutil_assignment_trap,
     {
       SCHEME_OBJECT sra = (MAKE_CC_RETURN (ret_addr));
       SCHEME_OBJECT block = (cc_return_to_block (sra));
+      stack_check (4 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
       stack_push (sra, tctx);
       stack_push (new_val, tctx);
       stack_push (cc_block_environment (block), tctx);
@@ -1341,6 +1338,7 @@ DEFINE_SCHEME_UTILITY_3 (comutil_cache_lookup_apply,
   if (code != PRIM_DONE)
     {
       SCHEME_OBJECT block = MAKE_CC_BLOCK (block_addr);
+      stack_check (4 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
       stack_push (block, tctx);
       stack_push (ULONG_TO_FIXNUM (frame_size), tctx);
       stack_push (cc_block_environment (block), tctx);
@@ -1515,8 +1513,9 @@ COMPILER_ARITH_PRIM (comutil_zero, GENERIC_TRAMPOLINE_ZERO_P, 2)
 
 DEFINE_SCHEME_UTILITY_2 (comutil_primitive_error, ret_addr, primitive)
 {
-  DECLARE_UTILITY_ARG (insn_t *, ret_addr);
+  DECLARE_UTILITY_ARG (insn_t*, ret_addr);
   DECLARE_UTILITY_ARG (SCHEME_OBJECT, primitive);
+  stack_check (2 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
   stack_push (MAKE_CC_ENTRY (ret_addr), tctx);
   stack_push (primitive, tctx);
   save_last_return_code (RC_COMP_ERROR_RESTART, tctx);
@@ -1686,7 +1685,7 @@ setup_lexpr_invocation (SCHEME_OBJECT procedure,
     unsigned long n_words = (n_args - n_max) * 2;
     if (GC_NEEDED_P (n_words))
       {
-	REQUEST_GC (n_words);
+	request_gc (n_words, tctx);
 	recover_from_apply_error (procedure, n_args, tctx);
 	return PRIM_APPLY_INTERRUPT;
       }
@@ -1731,7 +1730,7 @@ open_gap (unsigned long n_args, unsigned long n_needed, tctx_t* tctx)
 }
 
 void
-make_compiled_procedure_type (cc_entry_type_t * cet,
+make_compiled_procedure_type (cc_entry_type_t* cet,
 			      unsigned int n_required,
 			      unsigned int n_optional,
 			      bool rest_p)
@@ -1743,14 +1742,14 @@ make_compiled_procedure_type (cc_entry_type_t * cet,
 }
 
 void
-make_compiled_continuation_type (cc_entry_type_t * cet, unsigned long offset)
+make_compiled_continuation_type (cc_entry_type_t* cet, unsigned long offset)
 {
   (cet->marker) = CET_CONTINUATION;
   (cet->args.for_continuation.offset) = offset;
 }
 
 void
-make_cc_entry_type (cc_entry_type_t * cet, cc_entry_type_marker_t marker)
+make_cc_entry_type (cc_entry_type_t* cet, cc_entry_type_marker_t marker)
 {
   assert (! ((marker == CET_PROCEDURE) || (marker == CET_CONTINUATION)));
   (cet->marker) = marker;
@@ -1770,9 +1769,9 @@ cc_entry_to_block_address (SCHEME_OBJECT entry)
 }
 
 SCHEME_OBJECT *
-cc_entry_address_to_block_address (insn_t * entry)
+cc_entry_address_to_block_address (insn_t* entry)
 {
-  insn_t * p = entry;
+  insn_t* p = entry;
   while (1)
     {
       cc_entry_offset_t ceo;
@@ -1801,7 +1800,7 @@ cc_return_to_block_address (SCHEME_OBJECT ret)
 }
 
 SCHEME_OBJECT *
-cc_return_address_to_block_address (insn_t * addr)
+cc_return_address_to_block_address (insn_t* addr)
 {
   return
     (cc_entry_address_to_block_address
@@ -1809,7 +1808,7 @@ cc_return_address_to_block_address (insn_t * addr)
 }
 
 static bool
-plausible_first_cc_entry_p (insn_t * entry, insn_t * zero)
+plausible_first_cc_entry_p (insn_t* entry, insn_t* zero)
 {
   cc_entry_type_t cet;
   cc_entry_offset_t ceo;
@@ -1827,10 +1826,10 @@ plausible_first_cc_entry_p (insn_t * entry, insn_t * zero)
 }
 
 int
-plausible_cc_block_p (SCHEME_OBJECT * block)
+plausible_cc_block_p (SCHEME_OBJECT* block)
 {
-  insn_t * zero = ((insn_t *) block);
-  insn_t * entry = (((insn_t *) (block + 2)) + CC_ENTRY_HEADER_SIZE);
+  insn_t* zero = ((insn_t *) block);
+  insn_t* entry = (((insn_t *) (block + 2)) + CC_ENTRY_HEADER_SIZE);
 
   if (!plausible_first_cc_entry_p (entry, zero))
     {
@@ -1840,7 +1839,7 @@ plausible_cc_block_p (SCHEME_OBJECT * block)
     }
 
   {
-    SCHEME_OBJECT * block_end = ((CC_BLOCK_ADDR_END (block)) - 1);
+    SCHEME_OBJECT* block_end = ((CC_BLOCK_ADDR_END (block)) - 1);
     return
       ((((HEAP_ADDRESS_P (block)) && (HEAP_ADDRESS_P (block_end)))
 	|| ((ADDRESS_IN_CONSTANT_P (block))
@@ -1850,7 +1849,7 @@ plausible_cc_block_p (SCHEME_OBJECT * block)
 }
 
 static bool
-unlinked_section_start_p (SCHEME_OBJECT * mp, SCHEME_OBJECT * end)
+unlinked_section_start_p (SCHEME_OBJECT* mp, SCHEME_OBJECT* end)
 {
   SCHEME_OBJECT marker = (*mp);
   return
@@ -1951,7 +1950,7 @@ cc_entry_closure_p (SCHEME_OBJECT entry)
 }
 
 static bool
-cc_block_address_closure_p (SCHEME_OBJECT * block_addr)
+cc_block_address_closure_p (SCHEME_OBJECT* block_addr)
 {
   SCHEME_OBJECT header_word = (*block_addr);
   return (((OBJECT_TYPE (header_word)) == TC_MANIFEST_CLOSURE));
@@ -1992,11 +1991,11 @@ read_uuo_link (SCHEME_OBJECT block, unsigned long offset)
 }
 
 static void
-write_uuo_link (SCHEME_OBJECT target, SCHEME_OBJECT * cache_address)
+write_uuo_link (SCHEME_OBJECT target, SCHEME_OBJECT* cache_address)
 {
   write_uuo_target ((CC_ENTRY_ADDRESS (target)), cache_address);
 #ifdef FLUSH_I_CACHE_REGION
-  if (!linking_cc_block_p)
+  if (!linking_cc_block_p (tctx))
     {
       /* The linker will flush the whole region afterwards. */
       FLUSH_I_CACHE_REGION (cache_address, UUO_LINK_SIZE);
@@ -2005,9 +2004,9 @@ write_uuo_link (SCHEME_OBJECT target, SCHEME_OBJECT * cache_address)
 }
 
 SCHEME_OBJECT *
-compiled_closure_objects (SCHEME_OBJECT * block)
+compiled_closure_objects (SCHEME_OBJECT* block)
 {
-  insn_t * start = (compiled_closure_start (block));
+  insn_t* start = (compiled_closure_start (block));
   unsigned long count = (compiled_closure_count (block));
 
   /* Skip to end of entries.  */
@@ -2022,7 +2021,7 @@ compiled_closure_objects (SCHEME_OBJECT * block)
 }
 
 bool
-decode_old_style_format_word (cc_entry_type_t * cet, uint16_t fw)
+decode_old_style_format_word (cc_entry_type_t* cet, uint16_t fw)
 {
   uint16_t low = (fw & 0x00FF);
   uint16_t high = ((fw & 0xFF00) >> 8);
@@ -2082,7 +2081,7 @@ decode_old_style_format_word (cc_entry_type_t * cet, uint16_t fw)
 }
 
 bool
-encode_old_style_format_word (cc_entry_type_t * cet, uint16_t * fw_r)
+encode_old_style_format_word (cc_entry_type_t* cet, uint16_t* fw_r)
 {
   unsigned int low;
   unsigned int high;
@@ -2168,16 +2167,16 @@ encode_old_style_format_word (cc_entry_type_t * cet, uint16_t * fw_r)
 DEFINE_SCHEME_UTILITY_1 (pname, TRAMP_store)
 
 #define INIT_TRAMPOLINE_1(av1)						\
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, TRAMP_store);			\
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, TRAMP_store);			\
   SCHEME_OBJECT av1 = (TRAMP_store[0])
 
 #define INIT_TRAMPOLINE_2(av1, av2)					\
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, TRAMP_store);			\
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, TRAMP_store);			\
   SCHEME_OBJECT av1 = (TRAMP_store[0]);					\
   SCHEME_OBJECT av2 = (TRAMP_store[1])
 
 #define INIT_TRAMPOLINE_3(av1, av2, av3)				\
-  DECLARE_UTILITY_ARG (SCHEME_OBJECT *, TRAMP_store);			\
+  DECLARE_UTILITY_ARG (SCHEME_OBJECT*, TRAMP_store);			\
   SCHEME_OBJECT av1 = (TRAMP_store[0]);					\
   SCHEME_OBJECT av2 = (TRAMP_store[1]);					\
   SCHEME_OBJECT av3 = (TRAMP_store[2])
@@ -2232,7 +2231,7 @@ DEFINE_TRAMPOLINE (comutil_reflect_to_interface)
 	}
       {
 	insn_t* addr;
-	long code = do_bkpt_proceed (&addr);
+	long code = do_bkpt_proceed (&addr, tctx);
 	if (code != PRIM_DONE)
 	  {
 	    stack_push (code, tctx);
@@ -2393,12 +2392,13 @@ DEFINE_TRAMPOLINE (comutil_operator_4_3_trap)
 DEFINE_TRAMPOLINE (comutil_operator_lookup_trap)
 {
   INIT_TRAMPOLINE_3 (cache, block, offset);
-  SCHEME_OBJECT * cache_addr = (MEMORY_LOC (block, (OBJECT_DATUM (offset))));
+  SCHEME_OBJECT* cache_addr = (MEMORY_LOC (block, (OBJECT_DATUM (offset))));
   unsigned long frame_size = (read_uuo_frame_size (cache_addr));
   SCHEME_OBJECT procedure;
   long code = (compiler_operator_reference_trap (cache, (&procedure)));
   if (code != PRIM_DONE)
     {
+      stack_check (4 + SAVE_LAST_RETURN_CODE_PUSHES, tctx);
       stack_push (MAKE_CC_ENTRY (read_uuo_target_no_reloc (cache_addr)), tctx);
       /* Next three for debugger.  */
       stack_push (ULONG_TO_FIXNUM (frame_size), tctx);
@@ -2437,7 +2437,7 @@ make_uuo_link (SCHEME_OBJECT procedure,
 	       SCHEME_OBJECT block,
 	       unsigned long offset)
 {
-  SCHEME_OBJECT * cache_address = (MEMORY_LOC (block, offset));
+  SCHEME_OBJECT* cache_address = (MEMORY_LOC (block, offset));
   unsigned long frame_size = (read_uuo_frame_size (cache_address));
   trampoline_type_t kind;
   long result;
@@ -2451,7 +2451,7 @@ make_uuo_link (SCHEME_OBJECT procedure,
     {
     case TC_COMPILED_ENTRY:
       {
-	insn_t * entry = (CC_ENTRY_ADDRESS (procedure));
+	insn_t* entry = (CC_ENTRY_ADDRESS (procedure));
 	unsigned long nargs = (frame_size - 1);
 	cc_entry_type_t cet;
 	unsigned long nmin;
@@ -2553,7 +2553,7 @@ make_fake_uuo_link (SCHEME_OBJECT cache,
       return (result);
   }
   {
-    SCHEME_OBJECT * cache_address = (MEMORY_LOC (block, offset));
+    SCHEME_OBJECT* cache_address = (MEMORY_LOC (block, offset));
     write_uuo_link (trampoline, cache_address);
   }
   return (PRIM_DONE);
@@ -2562,7 +2562,7 @@ make_fake_uuo_link (SCHEME_OBJECT cache,
 long
 coerce_to_compiled (SCHEME_OBJECT procedure,
 		    unsigned int arity,
-		    SCHEME_OBJECT * location)
+		    SCHEME_OBJECT* location)
 {
   cc_entry_type_t cet;
 
@@ -2586,8 +2586,8 @@ coerce_to_compiled (SCHEME_OBJECT procedure,
 }
 
 static long
-make_trampoline (SCHEME_OBJECT * slot,
-		 cc_entry_type_t * cet,
+make_trampoline (SCHEME_OBJECT* slot,
+		 cc_entry_type_t* cet,
 		 trampoline_type_t kind,
 		 unsigned int n_values,
 		 ...)
@@ -2595,107 +2595,100 @@ make_trampoline (SCHEME_OBJECT * slot,
   SCHEME_OBJECT h1;
   SCHEME_OBJECT h2;
   unsigned long n_words;
-  SCHEME_OBJECT * block;
-
-  make_trampoline_headers (1, n_values, (&h1), (&h2), (&n_words));
+  make_trampoline_headers (1, n_values, &h1, &h2, &n_words);
   if (GC_NEEDED_P (n_words))
     {
-      REQUEST_GC (n_words);
-      return (PRIM_INTERRUPT);
+      request_gc (n_words, current_tctx ());
+      return PRIM_INTERRUPT;
     }
-  block = Free;
-  Free += n_words;
-  (block[0]) = h1;
-  (block[1]) = h2;
+  SCHEME_OBJECT* block = Free;
+  *Free++ = h1;
+  *Free++ = h2;
+  Free += n_words - 2;
   if (fill_trampoline (block, 0, cet, kind))
     return (ERR_COMPILED_CODE_ERROR);
   {
-    SCHEME_OBJECT * p = (trampoline_storage (block));
+    SCHEME_OBJECT* p = trampoline_storage (block);
     va_list ap;
-
     va_start (ap, n_values);
     while (n_values > 0)
       {
-	(*p++) = (va_arg (ap, SCHEME_OBJECT));
+	*p++ = va_arg (ap, SCHEME_OBJECT);
 	n_values -= 1;
       }
     va_end (ap);
   }
-  (*slot) = (MAKE_CC_ENTRY (trampoline_entry_addr (block, 0)));
-  return (PRIM_DONE);
+  *slot = MAKE_CC_ENTRY (trampoline_entry_addr (block, 0));
+  return PRIM_DONE;
 }
 
 static void
 make_trampoline_headers (unsigned long n_entries, unsigned long n_store,
-			 SCHEME_OBJECT * h1_r, SCHEME_OBJECT * h2_r,
-			 unsigned long * n_words_r)
+			 SCHEME_OBJECT* h1_r, SCHEME_OBJECT* h2_r,
+			 unsigned long* n_words_r)
 {
-  unsigned long n1 = (trampoline_entry_size (n_entries));
-  unsigned long n2 = (1 + n1 + n_store);
-  (*h1_r) = (MAKE_OBJECT (TC_TRAMPOLINE_HEADER, n2));
-  (*h2_r) = (MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n1));
-  (*n_words_r) = (1 + n2);
+  unsigned long n1 = trampoline_entry_size (n_entries);
+  unsigned long n2 = 1 + n1 + n_store;
+  *h1_r = MAKE_OBJECT (TC_TRAMPOLINE_HEADER, n2);
+  *h2_r = MAKE_OBJECT (TC_MANIFEST_NM_VECTOR, n1);
+  *n_words_r = 1 + n2;
 }
 
 static bool
-fill_trampoline (SCHEME_OBJECT * block,
+fill_trampoline (SCHEME_OBJECT* block,
 		 unsigned long index,
-		 cc_entry_type_t * cet,
+		 cc_entry_type_t* cet,
 		 trampoline_type_t kind)
 {
-  insn_t * addr = (trampoline_entry_addr (block, index));
+  insn_t* addr = trampoline_entry_addr (block, index);
   if (write_cc_entry_type (cet, addr))
     return (true);
   {
     cc_entry_offset_t ceo;
-    (ceo.offset) = (addr - ((insn_t *) block));
-    (ceo.continued_p) = false;
-    if (write_cc_entry_offset ((&ceo), addr))
-      return (true);
+    ceo.offset = addr - (insn_t *) block;
+    ceo.continued_p = false;
+    if (write_cc_entry_offset (&ceo, addr))
+      return true;
   }
   if (store_trampoline_insns (addr, kind))
-    return (true);
+    return true;
 #ifdef FLUSH_I_CACHE_REGION
   /* This is longer than the actual instructions, but trampolines are
      small -- only one, the compiler utilities, ever has more than one
      entry -- and there's not much harm in flushing an i-cache for a
      few words of memory that will never be executed as instructions
      anyway unless things are horribly awry.  */
-  FLUSH_I_CACHE_REGION (block, (CC_BLOCK_ADDR_LENGTH (block)));
+  FLUSH_I_CACHE_REGION (block, CC_BLOCK_ADDR_LENGTH (block));
 #endif
-  return (false);
+  return false;
 }
 
 SCHEME_OBJECT *
-trampoline_storage (SCHEME_OBJECT * block)
+trampoline_storage (SCHEME_OBJECT* block)
 {
-  return (block + 2 + (OBJECT_DATUM (block[1])));
+  return block + 2 + OBJECT_DATUM (block[1]);
 }
 
 static long
-make_redirection_trampoline (SCHEME_OBJECT * slot,
+make_redirection_trampoline (SCHEME_OBJECT* slot,
 			     trampoline_type_t kind,
 			     SCHEME_OBJECT procedure)
 {
   cc_entry_type_t cet;
-  make_cc_entry_type ((&cet), CET_TRAMPOLINE);
-  return (make_trampoline (slot, (&cet), kind, 1, procedure));
+  make_cc_entry_type (&cet, CET_TRAMPOLINE);
+  return make_trampoline (slot, &cet, kind, 1, procedure);
 }
 
 static long
-make_apply_trampoline (SCHEME_OBJECT * slot,
+make_apply_trampoline (SCHEME_OBJECT* slot,
 		       trampoline_type_t kind,
 		       SCHEME_OBJECT procedure,
 		       unsigned long frame_size)
 {
   cc_entry_type_t cet;
-  make_cc_entry_type ((&cet), CET_TRAMPOLINE);
-  return (make_trampoline (slot,
-			   (&cet),
-			   kind,
-			   2,
-			   procedure,
-			   (ULONG_TO_FIXNUM (frame_size))));
+  make_cc_entry_type (&cet, CET_TRAMPOLINE);
+  return make_trampoline
+           (slot, &cet, kind, 2, procedure, ULONG_TO_FIXNUM (frame_size));
 }
 
 /* Compiled-code breakpoints */
@@ -2705,61 +2698,63 @@ make_apply_trampoline (SCHEME_OBJECT * slot,
 #define BKPT_PROCEED_FRAME_SIZE	3
 
 SCHEME_OBJECT
-bkpt_proceed (insn_t * ep, SCHEME_OBJECT handle, SCHEME_OBJECT state)
+bkpt_proceed (insn_t* ep, SCHEME_OBJECT handle, SCHEME_OBJECT state,
+              tctx_t* tctx)
 {
-  if (! ((CC_RETURN_P (STACK_REF (BKPT_PROCEED_FRAME_SIZE)))
-	 && ((CC_RETURN_ADDRESS (STACK_REF (BKPT_PROCEED_FRAME_SIZE))) == ep)))
+  SCHEME_OBJECT ret = stack_ref (BKPT_PROCEED_FRAME_SIZE, tctx);
+  if (! (CC_RETURN_P (ret) && CC_RETURN_ADDRESS (ret) == ep))
     error_external_return ();
   push_reflection (REFLECT_CODE_CC_BKPT, tctx);
-  stack_pointer = (STACK_LOC (-BKPT_PROCEED_FRAME_SIZE));
-  return (SHARP_F);
+  decrement_sp (BKPT_PROCEED_FRAME_SIZE, tctx);
+  return SHARP_F;
 }
 
 #else /* not HAVE_BKPT_SUPPORT */
 
 SCHEME_OBJECT
-bkpt_install (insn_t * ep)
+bkpt_install (insn_t* ep)
 {
-  return (SHARP_F);
+  return SHARP_F;
 }
 
 SCHEME_OBJECT
-bkpt_closure_install (insn_t * ep)
+bkpt_closure_install (insn_t* ep)
 {
-  return (SHARP_F);
+  return SHARP_F;
 }
 
 void
-bkpt_remove (insn_t * ep, SCHEME_OBJECT handle)
+bkpt_remove (insn_t* ep, SCHEME_OBJECT handle)
 {
   error_external_return ();
 }
 
 bool
-bkpt_p (insn_t * ep)
+bkpt_p (insn_t* ep)
 {
-  return (false);
+  return false;
 }
 
 SCHEME_OBJECT
-bkpt_proceed (insn_t * ep, SCHEME_OBJECT handle, SCHEME_OBJECT state)
+bkpt_proceed (insn_t* ep, SCHEME_OBJECT handle, SCHEME_OBJECT state,
+              tctx_t* tctx)
 {
   error_external_return ();
-  return (UNSPECIFIC);
+  return UNSPECIFIC;
 }
 
 long
-do_bkpt_proceed (insn_t ** addr_r)
+do_bkpt_proceed (insn_t** addr_r, tctx_t* tctx)
 {
-  return (ERR_EXTERNAL_RETURN);
+  return ERR_EXTERNAL_RETURN;
 }
 
 #endif /* not HAVE_BKPT_SUPPORT */
 
 DEFINE_SCHEME_UTILITY_2 (comutil_compiled_code_bkpt, entry_addr, state)
 {
-  DECLARE_UTILITY_ARG (insn_t *, entry_addr);
-  DECLARE_UTILITY_ARG (void *, state);
+  DECLARE_UTILITY_ARG (insn_t*, entry_addr);
+  DECLARE_UTILITY_ARG (void*, state);
 
   /* Potential bug: This does not preserve the environment for IC
      procedures.  There is no way to tell that we have an IC procedure
@@ -2810,7 +2805,7 @@ DEFINE_SCHEME_UTILITY_2 (comutil_compiled_code_bkpt, entry_addr, state)
 
 DEFINE_SCHEME_UTILITY_1 (comutil_compiled_closure_bkpt, entry_addr)
 {
-  DECLARE_UTILITY_ARG (insn_t *, entry_addr);
+  DECLARE_UTILITY_ARG (insn_t*, entry_addr);
 
   SCHEME_OBJECT entry = MAKE_CC_ENTRY (entry_addr);
   stack_push (entry, tctx);
@@ -2831,7 +2826,7 @@ DEFINE_SCHEME_UTILITY_1 (comutil_compiled_closure_bkpt, entry_addr)
    defined on the following page and the corresponding table in the
    compiler.  */
 
-utility_proc_t * utility_table [] =
+utility_proc_t* utility_table[] =
 {
   comutil_return_to_interpreter,		/* 0x0 */
   comutil_operator_apply_trap,			/* 0x1 */
@@ -2898,47 +2893,45 @@ utility_proc_t * utility_table [] =
 };
 
 unsigned long max_trampoline
-  = ((sizeof (utility_table)) / (sizeof (utility_proc_t *)));
+  = sizeof (utility_table) / sizeof (utility_proc_t*);
 
 /* Support for trap handling. */
 
 const char *
 utility_index_to_name (unsigned int index)
 {
-  return (0);
+  return 0;
 }
 
 int
 pc_to_utility_index (unsigned long pc)
 {
-  return (-1);
+  return -1;
 }
 
 static unsigned int n_builtins = 0;
 static unsigned int s_builtins = 0;
-static unsigned long * builtins = 0;
-static const char ** builtin_names = 0;
+static unsigned long* builtins = 0;
+static const char** builtin_names = 0;
 
 void
-declare_builtin (unsigned long builtin, const char * name)
+declare_builtin (unsigned long builtin, const char* name)
 {
   if (n_builtins == s_builtins)
     {
       if (s_builtins == 0)
 	{
 	  s_builtins = 30;
-	  builtins = (malloc (s_builtins * (sizeof (unsigned long))));
-	  builtin_names = (malloc (s_builtins * (sizeof (char *))));
+	  builtins = malloc (s_builtins * sizeof (unsigned long));
+	  builtin_names = malloc (s_builtins * sizeof (char*));
 	}
       else
 	{
 	  s_builtins += s_builtins;
-	  builtins
-	    = (realloc (builtins, (s_builtins * (sizeof (unsigned long)))));
-	  builtin_names
-	    = (realloc (builtin_names, (s_builtins * (sizeof (char *)))));
+	  builtins = realloc (builtins, s_builtins * sizeof (unsigned long));
+	  builtin_names = realloc (builtin_names, s_builtins * sizeof (char*));
 	}
-      if ((builtins == 0) || (builtin_names == 0))
+      if (builtins == 0 || builtin_names == 0)
 	{
 	  outf_fatal ("declare_builtin: malloc/realloc failed (size = %d).\n",
 		      s_builtins);
@@ -2952,28 +2945,28 @@ declare_builtin (unsigned long builtin, const char * name)
       {
 	if (low < high)
 	  {
-	    unsigned int middle = ((low + high) / 2);
-	    if (builtin < (builtins[middle]))
+	    unsigned int middle = (low + high) / 2;
+	    if (builtin < builtins[middle])
 	      high = middle;
-	    else if (builtin > (builtins[middle]))
-	      low = (middle + 1);
+	    else if (builtin > builtins[middle])
+	      low = middle + 1;
 	    else
 	      {
-		(builtin_names[middle]) = name;
+		builtin_names[middle] = name;
 		return;
 	      }
 	  }
 	else
 	  {
-	    unsigned int scan = (n_builtins++);
+	    unsigned int scan = n_builtins++;
 	    while (low < scan)
 	      {
-		(builtins [scan]) = (builtins [scan - 1]);
-		(builtin_names [scan]) = (builtin_names [scan - 1]);
+		builtins[scan] = builtins[scan - 1];
+		builtin_names[scan] = builtin_names[scan - 1];
 		scan -= 1;
 	      }
-	    (builtins [low]) = builtin;
-	    (builtin_names [low]) = name;
+	    builtins[low] = builtin;
+	    builtin_names[low] = name;
 	    return;
 	  }
       }
@@ -2983,68 +2976,30 @@ declare_builtin (unsigned long builtin, const char * name)
 const char *
 builtin_index_to_name (unsigned int index)
 {
-  return ((index < n_builtins) ? (builtin_names[index]) : 0);
+  return (index < n_builtins) ? builtin_names[index] : 0;
 }
 
 int
 pc_to_builtin_index (unsigned long pc)
 {
-  if (! ((builtins != 0)
-	 && (n_builtins > 0)
-	 && (pc >= (builtins[0]))
-	 && (pc < (builtins [(n_builtins - 1)]))))
-    return (-1);
+  if (! (builtins != 0
+	 && n_builtins > 0
+	 && pc >= builtins[0]
+	 && pc < builtins[n_builtins - 1]))
+    return -1;
   {
     unsigned int low = 0;
-    unsigned int high = (n_builtins - 1);
+    unsigned int high = n_builtins - 1;
     while ((low + 1) < high)
       {
-	unsigned int middle = ((low + high) / 2);
-	if (pc < (builtins[middle]))
+	unsigned int middle = (low + high) / 2;
+	if (pc < builtins[middle])
 	  high = middle;
-	else if (pc > (builtins[middle]))
+	else if (pc > builtins[middle])
 	  low = middle;
 	else
-	  return (middle);
+	  return middle;
       }
-    return ((pc == (builtins[high])) ? high : low);
+    return (pc == builtins[high]) ? high : low;
   }
 }
-
-#ifdef __WIN32__
-#include "ntscmlib.h"
-
-extern unsigned long * win32_catatonia_block;
-
-#ifndef REGBLOCK_LENGTH
-#  define REGBLOCK_LENGTH REGBLOCK_MINIMUM_LENGTH
-#endif
-
-typedef struct register_storage
-{
-  /* The following must be allocated consecutively */
-  unsigned long catatonia_block [3];
-  void * Regstart [32];		/* Negative byte offsets from &Registers[0] */
-  SCHEME_OBJECT Registers [REGBLOCK_LENGTH];
-} REGMEM;
-
-SCHEME_OBJECT * RegistersPtr = 0;
-unsigned long * win32_catatonia_block = 0;
-static REGMEM regmem;
-
-void
-win32_allocate_registers (void)
-{
-  win32_catatonia_block = (regmem.catatonia_block);
-  Registers = (regmem.Registers);
-  if (!win32_system_utilities.lock_memory_area ((&regmem), (sizeof (regmem))))
-    outf_error_line ("Unable to lock registers");
-}
-
-void
-win32_deallocate_registers (void)
-{
-  win32_system_utilities.unlock_memory_area ((&regmem), (sizeof (regmem)));
-}
-
-#endif /* __WIN32__ */
